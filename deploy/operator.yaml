@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: egressip-ipam-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: egressip-ipam-operator
+  template:
+    metadata:
+      labels:
+        name: egressip-ipam-operator
+    spec:
+      serviceAccountName: egressip-ipam-operator
+      containers:
+        - name: egressip-ipam-operator
+          # Replace this with the built image name
+          image: quay.io/redhat-cop/egressip-ipam-operator:v0.1.0
+          command:
+          - egressip-ipam-operator
+          imagePullPolicy: Always
+          env:
+            - name: WATCH_NAMESPACE
+              value: ""
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: OPERATOR_NAME
+              value: "egressip-ipam-operator"
