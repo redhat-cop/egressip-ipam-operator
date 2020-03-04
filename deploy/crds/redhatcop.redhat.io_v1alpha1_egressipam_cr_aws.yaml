@@ -5,9 +5,11 @@ metadata:
 spec:
   # Add fields here
   cidrAssignment:
-    - labelValue: "true"
+    - labelValue: us-east-1
       CIDR: 192.169.0.0/24
-  nodeLabel: egressGateway
+    - labelValue: us-east-2
+      CIDR: 192.170.0.0/24
+  nodeLabel: topology.kubernetes.io/zone
   nodeSelector:
     node-role.kubernetes.io/worker: ""
     

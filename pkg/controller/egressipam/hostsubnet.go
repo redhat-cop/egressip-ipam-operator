@@ -1,9 +1,16 @@
 package egressipam
 
 import (
+	"context"
+	"errors"
+	"net"
+	"reflect"
+
 	ocpnetv1 "github.com/openshift/api/network/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
@@ -73,4 +80,35 @@ func (e *enqueForSelectingEgressIPAMHostSubnet) Delete(evt event.DeleteEvent, q 
 // Generic implements EventHandler
 func (e *enqueForSelectingEgressIPAMHostSubnet) Generic(evt event.GenericEvent, q workqueue.RateLimitingInterface) {
 	return
+}
+
+// ensures that hostsubntes have the correct egressIPs
+func (r *ReconcileEgressIPAM) reconcileHSAssignedIPs(nodeAssignedIPs map[*corev1.Node][]net.IP) error {
+	return errors.New("not implemented")
+}
+
+// ensures that hostsubnets have the correct CIDR
+func (r *ReconcileEgressIPAM) assignCIDRsToHostSubnets(nodeByCIDR map[*net.IPNet][]corev1.Node) error {
+	for cidr, nodes := range nodeByCIDR {
+		cidrs := []string{cidr.String()}
+		for _, node := range nodes {
+			hostsubnet := &ocpnetv1.HostSubnet{}
+			err := r.GetClient().Get(context.TODO(), types.NamespacedName{
+				Name: node.GetName(),
+			}, hostsubnet)
+			if err != nil {
+				log.Error(err, "unable to lookup hostsubnet for ", "node", node)
+				return err
+			}
+			if !reflect.DeepEqual(hostsubnet.EgressCIDRs, cidrs) {
+				hostsubnet.EgressCIDRs = cidrs
+				err := r.GetClient().Update(context.TODO(), hostsubnet, &client.UpdateOptions{})
+				if err != nil {
+					log.Error(err, "unable to update", "hostsubnet ", hostsubnet, "with cidrs", cidrs)
+					return err
+				}
+			}
+		}
+	}
+	return nil
 }

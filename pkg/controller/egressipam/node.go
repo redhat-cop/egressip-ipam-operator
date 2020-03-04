@@ -2,11 +2,15 @@ package egressipam
 
 import (
 	"context"
+	"net"
 
 	ocpnetv1 "github.com/openshift/api/network/v1"
+	redhatcopv1alpha1 "github.com/redhat-cop/egressip-ipam-operator/pkg/apis/redhatcop/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
@@ -78,4 +82,40 @@ func (r *ReconcileEgressIPAM) getNode(hostsubnet *ocpnetv1.HostSubnet) (corev1.N
 		return corev1.Node{}, err
 	}
 	return *node, nil
+}
+
+// returns nodes selected by this egressIPAM sorted by the CIDR
+func (r *ReconcileEgressIPAM) getSelectedNodesByCIDR(egressIPAM *redhatcopv1alpha1.EgressIPAM) (map[*net.IPNet][]corev1.Node, error) {
+	nodeList := &corev1.NodeList{}
+	selector, err := metav1.LabelSelectorAsSelector(&egressIPAM.Spec.NodeSelector)
+	if err != nil {
+		log.Error(err, "unable to create selector from label selector", "selector", &egressIPAM.Spec.NodeSelector)
+		return map[*net.IPNet][]corev1.Node{}, err
+	}
+	err = r.GetClient().List(context.TODO(), nodeList, &client.ListOptions{
+		LabelSelector: selector,
+	})
+	if err != nil {
+		log.Error(err, "unable to list sleected nodes", "selector", egressIPAM.Spec.NodeSelector)
+		return map[*net.IPNet][]corev1.Node{}, err
+	}
+	selectedNdesByCIDR := map[*net.IPNet][]corev1.Node{}
+	CIDRbyLabel := map[string]*net.IPNet{}
+	for _, cidrAssignment := range egressIPAM.Spec.CIDRAssignments {
+		_, cidr, err := net.ParseCIDR(cidrAssignment.CIDR)
+		if err != nil {
+			log.Error(err, "unable to parse", "cidr", cidrAssignment.CIDR)
+			return map[*net.IPNet][]corev1.Node{}, err
+		}
+		CIDRbyLabel[cidrAssignment.LabelValue] = cidr
+		selectedNdesByCIDR[cidr] = []corev1.Node{}
+	}
+	for _, node := range nodeList.Items {
+		if value, ok := node.GetLabels()[egressIPAM.Spec.NodeLabel]; ok {
+			if cidr, ok := CIDRbyLabel[value]; ok {
+				selectedNdesByCIDR[cidr] = append(selectedNdesByCIDR[cidr], node)
+			}
+		}
+	}
+	return selectedNdesByCIDR, nil
 }

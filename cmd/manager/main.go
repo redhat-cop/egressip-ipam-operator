@@ -6,25 +6,26 @@ import (
 	"flag"
 	"fmt"
 	"os"
+
 	"runtime"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
+	ocpconfigv1 "github.com/openshift/api/config/v1"
 	ocpnetv1 "github.com/openshift/api/network/v1"
-	"github.com/redhat-cop/egressip-ipam-operator/pkg/apis"
-	"github.com/redhat-cop/egressip-ipam-operator/pkg/controller"
-	"github.com/redhat-cop/egressip-ipam-operator/version"
-	_ "k8s.io/client-go/plugin/pkg/client/auth"
-	"k8s.io/client-go/rest"
-
 	"github.com/operator-framework/operator-sdk/pkg/k8sutil"
 	kubemetrics "github.com/operator-framework/operator-sdk/pkg/kube-metrics"
 	"github.com/operator-framework/operator-sdk/pkg/leader"
 	"github.com/operator-framework/operator-sdk/pkg/log/zap"
 	"github.com/operator-framework/operator-sdk/pkg/metrics"
 	sdkVersion "github.com/operator-framework/operator-sdk/version"
+	"github.com/redhat-cop/egressip-ipam-operator/pkg/apis"
+	"github.com/redhat-cop/egressip-ipam-operator/pkg/controller"
+	"github.com/redhat-cop/egressip-ipam-operator/version"
 	"github.com/spf13/pflag"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	_ "k8s.io/client-go/plugin/pkg/client/auth"
+	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -113,6 +114,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := ocpconfigv1.AddToScheme(mgr.GetScheme()); err != nil {
+		log.Error(err, "")
+		os.Exit(1)
+	}
+
 	// Setup all Controllers
 	if err := controller.AddToManager(mgr); err != nil {
 		log.Error(err, "")
@@ -129,6 +135,7 @@ func main() {
 		log.Error(err, "Manager exited non-zero")
 		os.Exit(1)
 	}
+
 }
 
 // addMetrics will create the Services and Service Monitors to allow the operator export the metrics by using

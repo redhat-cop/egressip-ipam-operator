@@ -2,11 +2,15 @@ package egressipam
 
 import (
 	"context"
+	"errors"
+	"reflect"
+	"strings"
 
 	ocpnetv1 "github.com/openshift/api/network/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
@@ -90,4 +94,29 @@ func (r *ReconcileEgressIPAM) getNamespace(netnamespace *ocpnetv1.NetNamespace) 
 		return corev1.Namespace{}, err
 	}
 	return *namespace, nil
+}
+
+func (r *ReconcileEgressIPAM) reconcileNetNamespaces(assignedNamespaces []corev1.Namespace) error {
+	for _, namespace := range assignedNamespaces {
+		ipstring, ok := namespace.GetAnnotations()[namespaceAssociationAnnotation]
+		if !ok {
+			return errors.New("namespace " + namespace.GetName() + " doesn't have required annotation: " + namespaceAssociationAnnotation)
+		}
+		IPs := strings.Split(ipstring, ",")
+		netnamespace := ocpnetv1.NetNamespace{}
+		err := r.GetClient().Get(context.TODO(), types.NamespacedName{Name: namespace.GetName()}, &netnamespace)
+		if err != nil {
+			log.Error(err, "unable to retrieve the netnamespace for", "namespace", namespace)
+			return err
+		}
+		if !reflect.DeepEqual(netnamespace.EgressIPs, IPs) {
+			netnamespace.EgressIPs = IPs
+			err := r.GetClient().Update(context.TODO(), &netnamespace, &client.UpdateOptions{})
+			if err != nil {
+				log.Error(err, "unable update ", "netnamespace", netnamespace)
+				return err
+			}
+		}
+	}
+	return nil
 }

@@ -1,6 +1,7 @@
 package v1alpha1
 
 import (
+	"github.com/redhat-cop/operator-utils/pkg/util/apis"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -20,10 +21,16 @@ type EgressIPAMSpec struct {
 
 	// +kubebuilder:validation:Required
 	NodeLabel string `json:"nodeLabel"`
+
+	// +kubebuilder:validation:Optional
+	NodeSelector metav1.LabelSelector `json:"nodeSelector,omitempty"`
 }
 
 type CIDRAssignment struct {
 	// +kubebuilder:validation:Required
+	// TODO this is not working...
+	// kubebuilder:validation:Pattern=^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(3[0-2]|[1-2][0-9]|[0-9]))$
+	// kubebuilder:validation:Pattern=^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(/(3[0-2]|2[0-9]|1[0-9]|[0-9]))?$
 	CIDR string `json:"CIDR"`
 
 	// +kubebuilder:validation:Required
@@ -35,6 +42,15 @@ type EgressIPAMStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "operator-sdk generate k8s" to regenerate code after modifying this file
 	// Add custom validation using kubebuilder tags: https://book-v1.book.kubebuilder.io/beyond_basics/generating_crd.html
+	apis.ReconcileStatus `json:",inline"`
+}
+
+func (m *EgressIPAM) GetReconcileStatus() apis.ReconcileStatus {
+	return m.Status.ReconcileStatus
+}
+
+func (m *EgressIPAM) SetReconcileStatus(reconcileStatus apis.ReconcileStatus) {
+	m.Status.ReconcileStatus = reconcileStatus
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
