@@ -85,6 +85,12 @@ OPERATOR_NAME='egressip-ipam-operator' operator-sdk --verbose up local --namespa
 
 ## Testing
 
+### Baremetal test
+
+```shell
+oc apply -f test/egressIPAM-baremetal.yaml
+oc apply -f test/namespace-baremetal.yaml
+```
 
 ## Release Process
 

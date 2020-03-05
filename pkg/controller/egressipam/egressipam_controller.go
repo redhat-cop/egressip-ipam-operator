@@ -282,7 +282,7 @@ func (r *ReconcileEgressIPAM) Reconcile(request reconcile.Request) (reconcile.Re
 	//ensure that corresponding netnamespaces have the correct IPs
 	err = r.reconcileNetNamespaces(assignedNamespaces)
 	if err != nil {
-		log.Error(err, "unable to reconcile netnamespaced for ", "namespaces", assignedNamespaces)
+		log.Error(err, "unable to reconcile netnamespace for ", "namespaces", assignedNamespaces)
 		return r.ManageError(instance, err)
 	}
 

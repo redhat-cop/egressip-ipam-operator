@@ -113,7 +113,7 @@ func (r *ReconcileEgressIPAM) reconcileNetNamespaces(assignedNamespaces []corev1
 			netnamespace.EgressIPs = IPs
 			err := r.GetClient().Update(context.TODO(), &netnamespace, &client.UpdateOptions{})
 			if err != nil {
-				log.Error(err, "unable update ", "netnamespace", netnamespace)
+				log.Error(err, "unable to update ", "netnamespace", netnamespace)
 				return err
 			}
 		}

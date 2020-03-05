@@ -19,8 +19,8 @@ func (r *ReconcileEgressIPAM) getAllEgressIPAM() ([]redhatcopv1alpha1.EgressIPAM
 }
 
 // retrun whether this EgressIPAM macthes this node and with which CIDR
-func matchesNode(egressIPAM *redhatcopv1alpha1.EgressIPAM, node *corev1.Node) (bool, string) {
-	value, ok := node.GetAnnotations()[egressIPAM.Spec.NodeLabel]
+func matchesNode(egressIPAM *redhatcopv1alpha1.EgressIPAM, node corev1.Node) (bool, string) {
+	value, ok := node.GetLabels()[egressIPAM.Spec.NodeLabel]
 	if !ok {
 		return false, ""
 	}

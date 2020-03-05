@@ -1,0 +1,12 @@
+apiVersion: redhatcop.redhat.io/v1alpha1
+kind: EgressIPAM
+metadata:
+  name: egressipam-baremetal
+spec:
+  # Add fields here
+  cidrAssignment:
+    - labelValue: "true"
+      CIDR: 192.169.0.0/24
+  nodeLabel: egressGateway
+  nodeSelector:
+    node-role.kubernetes.io/worker: ""

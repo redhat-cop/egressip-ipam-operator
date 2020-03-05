@@ -37,7 +37,7 @@ func (e *enqueForSelectingEgressIPAMHostSubnet) Create(evt event.CreateEvent, q 
 		return
 	}
 	for _, egressIPAM := range egressIPAMs {
-		if matches, _ := matchesNode(&egressIPAM, &node); matches {
+		if matches, _ := matchesNode(&egressIPAM, node); matches {
 			q.Add(reconcile.Request{NamespacedName: types.NamespacedName{
 				Name: egressIPAM.GetName(),
 			}})
@@ -64,7 +64,7 @@ func (e *enqueForSelectingEgressIPAMHostSubnet) Update(evt event.UpdateEvent, q 
 		return
 	}
 	for _, egressIPAM := range egressIPAMs {
-		if matches, _ := matchesNode(&egressIPAM, &node); matches {
+		if matches, _ := matchesNode(&egressIPAM, node); matches {
 			q.Add(reconcile.Request{NamespacedName: types.NamespacedName{
 				Name: egressIPAM.GetName(),
 			}})

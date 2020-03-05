@@ -1,11 +1,14 @@
 package egressipam
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net"
+	"sort"
 	"strings"
 
+	"github.com/jpillora/ipmath"
 	redhatcopv1alpha1 "github.com/redhat-cop/egressip-ipam-operator/pkg/apis/redhatcop/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -19,7 +22,7 @@ func (r *ReconcileEgressIPAM) assignIPsToNamespaces(unassignedNamespaces []corev
 		return []corev1.Namespace{}, err
 	}
 	for i := range unassignedNamespaces {
-		IPs, err := getNextAvailableIPs(&IPsByCIDR)
+		IPs, err := getNextAvailableIPs(IPsByCIDR)
 		if err != nil {
 			log.Error(err, "unable to assing new IPs for ", "namespace", unassignedNamespaces[i])
 			return []corev1.Namespace{}, err
@@ -40,9 +43,38 @@ func (r *ReconcileEgressIPAM) assignIPsToNamespaces(unassignedNamespaces []corev
 }
 
 // returns a set of IPs. These IPs are the next available IP per CIDR.
-// The map of CIDR is passed by referne and updated with the new IPs, so this function can be used in a loop.
-func getNextAvailableIPs(IPsByCIDR *map[*net.IPNet][]net.IP) ([]net.IP, error) {
-	return []net.IP{}, errors.New("not implemented")
+// The map of CIDR is passed by reference and updated with the new IPs, so this function can be used in a loop.
+func getNextAvailableIPs(IPsByCIDR map[*net.IPNet][]net.IP) ([]net.IP, error) {
+	assignedIPs := []net.IP{}
+	for cidr := range IPsByCIDR {
+		assignedIP, err := getNextAvailableIP(cidr, IPsByCIDR[cidr])
+		if err != nil {
+			log.Error(err, "unable to assign get next ip for", "cidr", cidr)
+			return []net.IP{}, err
+		}
+		assignedIPs = append(assignedIPs, assignedIP)
+		IPsByCIDR[cidr] = append(IPsByCIDR[cidr], assignedIP)
+	}
+	return assignedIPs, nil
+}
+
+func getNextAvailableIP(cidr *net.IPNet, assignedIPs []net.IP) (net.IP, error) {
+	if uint32(len(assignedIPs)) == ipmath.NetworkSize(cidr) {
+		return net.IP{}, errors.New("no more available IPs in this CIDR")
+	}
+	sortIPs(assignedIPs)
+	for i := range assignedIPs {
+		if !assignedIPs[i].Equal(ipmath.DeltaIP(cidr.IP, i+1)) {
+			return ipmath.DeltaIP(cidr.IP, i+1), nil
+		}
+	}
+	return ipmath.DeltaIP(cidr.IP, 1), nil
+}
+
+func sortIPs(ips []net.IP) {
+	sort.Slice(ips, func(i, j int) bool {
+		return bytes.Compare(ips[i], ips[j]) < 0
+	})
 }
 
 // returns a map with nodes and egress IPs that have been assigned to them. This should preserve IPs that are already assigned.
