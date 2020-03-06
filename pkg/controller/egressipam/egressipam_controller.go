@@ -304,6 +304,7 @@ func (r *ReconcileEgressIPAM) Reconcile(request reconcile.Request) (reconcile.Re
 			log.Error(err, "unable to assigne CIDR to hostsubnets from ", "nodesByCIDR", nodesByCIDR)
 			return r.ManageError(instance, err)
 		}
+		return r.ManageSuccess(instance)
 	}
 
 	if infrastrcuture.Status.Platform == ocpconfigv1.AWSPlatformType {

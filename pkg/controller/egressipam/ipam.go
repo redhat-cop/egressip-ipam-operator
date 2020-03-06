@@ -32,7 +32,7 @@ func (r *ReconcileEgressIPAM) assignIPsToNamespaces(unassignedNamespaces []corev
 			ipstrings = append(ipstrings, IP.String())
 
 		}
-		unassignedNamespaces[i].ObjectMeta.Annotations[namespaceAssociationAnnotation] = strings.Join(ipstrings, "'")
+		unassignedNamespaces[i].ObjectMeta.Annotations[namespaceAssociationAnnotation] = strings.Join(ipstrings, ",")
 		err = r.GetClient().Update(context.TODO(), &unassignedNamespaces[i], &client.UpdateOptions{})
 		if err != nil {
 			log.Error(err, "unable to update", "namespace", unassignedNamespaces[i])
@@ -45,15 +45,16 @@ func (r *ReconcileEgressIPAM) assignIPsToNamespaces(unassignedNamespaces []corev
 // returns a set of IPs. These IPs are the next available IP per CIDR.
 // The map of CIDR is passed by reference and updated with the new IPs, so this function can be used in a loop.
 func getNextAvailableIPs(IPsByCIDR map[*net.IPNet][]net.IP) ([]net.IP, error) {
+	iPsByCIDR := IPsByCIDR
 	assignedIPs := []net.IP{}
-	for cidr := range IPsByCIDR {
-		assignedIP, err := getNextAvailableIP(cidr, IPsByCIDR[cidr])
+	for cidr := range iPsByCIDR {
+		assignedIP, err := getNextAvailableIP(cidr, iPsByCIDR[cidr])
 		if err != nil {
 			log.Error(err, "unable to assign get next ip for", "cidr", cidr)
 			return []net.IP{}, err
 		}
 		assignedIPs = append(assignedIPs, assignedIP)
-		IPsByCIDR[cidr] = append(IPsByCIDR[cidr], assignedIP)
+		iPsByCIDR[cidr] = append(iPsByCIDR[cidr], assignedIP)
 	}
 	return assignedIPs, nil
 }
@@ -68,7 +69,7 @@ func getNextAvailableIP(cidr *net.IPNet, assignedIPs []net.IP) (net.IP, error) {
 			return ipmath.DeltaIP(cidr.IP, i+1), nil
 		}
 	}
-	return ipmath.DeltaIP(cidr.IP, 1), nil
+	return ipmath.DeltaIP(cidr.IP, len(assignedIPs)+1), nil
 }
 
 func sortIPs(ips []net.IP) {

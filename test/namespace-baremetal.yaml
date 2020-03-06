@@ -1,6 +1,14 @@
+---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: egressipam-baremetal-test
   annotations:
     egressip-ipam-operator.redhat-cop.io/egressipam:  egressipam-baremetal
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: egressipam-baremetal-test2
+  annotations:
+    egressip-ipam-operator.redhat-cop.io/egressipam:  egressipam-baremetal    
