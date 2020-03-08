@@ -82,3 +82,26 @@ func sortIPs(ips []net.IP) {
 func assignIPsToNodes(nodesByCIDR map[*net.IPNet][]corev1.Node, assignedIPsByCIDR map[*net.IPNet][]net.IP) (map[*corev1.Node][]net.IP, error) {
 	return map[*corev1.Node][]net.IP{}, errors.New("not implemented")
 }
+
+func (r *ReconcileEgressIPAM) getCurrentlyNodeAssignedIPsByCIDR(nodesByCIDR map[*net.IPNet][]corev1.Node, assignedIPsByCIDR map[*net.IPNet][]net.IP) map[*net.IPNet][]net.IP {
+	currentlyAssignedIPsByNodes := r.getCurrentlyNodeAssignedIPsByCIDR(nodesByCIDR)
+}
+
+func (r *ReconcileEgressIPAM) getCurrentlyAssignedIPsByNode(nodesByCIDR map[*net.IPNet][]corev1.Node) (map[*corev1.Node][]net.IP, error) {
+	currentlyAssignedIPsByNodes := map[*corev1.Node][]net.IP{}
+	for _, nodes := range nodesByCIDR {
+		for _, node := range nodes {
+			assignedIPs := []net.IP{}
+			hostsubnet, err := r.getHostSubnet(&node)
+			if err != nil {
+				log.Error(err, "unable to get hostsubnet for ", "node", node)
+				return map[*corev1.Node][]net.IP{}, err
+			}
+			for _, ipstr := range hostsubnet.EgressIPs {
+				assignedIPs = append(assignedIPs, net.ParseIP(ipstr))
+			}
+			currentlyAssignedIPsByNodes[&node] = assignedIPs
+		}
+	}
+	return currentlyAssignedIPsByNodes, nil
+}

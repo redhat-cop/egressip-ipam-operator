@@ -92,10 +92,7 @@ func (r *ReconcileEgressIPAM) assignCIDRsToHostSubnets(nodeByCIDR map[*net.IPNet
 	for cidr, nodes := range nodeByCIDR {
 		cidrs := []string{cidr.String()}
 		for _, node := range nodes {
-			hostsubnet := &ocpnetv1.HostSubnet{}
-			err := r.GetClient().Get(context.TODO(), types.NamespacedName{
-				Name: node.GetName(),
-			}, hostsubnet)
+			hostsubnet, err := r.getHostSubnet(&node)
 			if err != nil {
 				log.Error(err, "unable to lookup hostsubnet for ", "node", node)
 				return err
@@ -111,4 +108,16 @@ func (r *ReconcileEgressIPAM) assignCIDRsToHostSubnets(nodeByCIDR map[*net.IPNet
 		}
 	}
 	return nil
+}
+
+func (r *ReconcileEgressIPAM) getHostSubnet(node *corev1.Node) (ocpnetv1.HostSubnet, error) {
+	hostsubnet := &ocpnetv1.HostSubnet{}
+	err := r.GetClient().Get(context.TODO(), types.NamespacedName{
+		Name: node.GetName(),
+	}, hostsubnet)
+	if err != nil {
+		log.Error(err, "unable to get hostsubnet for ", "node", node)
+		return ocpnetv1.HostSubnet{}, nil
+	}
+	return *hostsubnet, nil
 }
