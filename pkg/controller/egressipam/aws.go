@@ -1,12 +1,19 @@
 package egressipam
 
 import (
+	"context"
 	"errors"
 	"net"
 
+	cloudcredentialv1 "github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1"
 	redhatcopv1alpha1 "github.com/redhat-cop/egressip-ipam-operator/pkg/apis/redhatcop/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 )
+
+const aWSCredentialsSecretName = "egress-ipam-operator-cloud-credentials"
 
 // returns nodes selected by this egressIPAM sorted by the CIDR
 func (r *ReconcileEgressIPAM) getAWSAssignedIPsByNode(nodesByCIDR map[*net.IPNet][]corev1.Node, egressIPAM *redhatcopv1alpha1.EgressIPAM) (map[*corev1.Node][]net.IP, error) {
@@ -22,4 +29,85 @@ func (r *ReconcileEgressIPAM) removeAWSUnusedIPs(awsAssignedIPsByNode map[*corev
 // assigns secondary IPs to AWS machines
 func (r *ReconcileEgressIPAM) reconcileAWSAssignedIPs(assignedIPsByNode map[*corev1.Node][]net.IP, egressIPAM *redhatcopv1alpha1.EgressIPAM) error {
 	return errors.New("not implemented")
+}
+
+func (r *ReconcileEgressIPAM) createAWSCredentialRequest() error {
+	awsSpec := cloudcredentialv1.AWSProviderSpec{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "cloudcredential.openshift.io/v1",
+			Kind:       "AWSProviderSpec",
+		},
+		StatementEntries: []cloudcredentialv1.StatementEntry{},
+	}
+	namespace, err := getOperatorNamespace()
+	if err != nil {
+		log.Error(err, "unable to get operator's namespace")
+		return err
+	}
+	request := cloudcredentialv1.CredentialsRequest{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "egress-ipam-operator",
+			Namespace: "openshift-cloud-credential-operator",
+		},
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "cloudcredential.openshift.io/v1",
+			Kind:       "CredentialsRequest",
+		},
+		Spec: cloudcredentialv1.CredentialsRequestSpec{
+			SecretRef: corev1.ObjectReference{
+				Name:      aWSCredentialsSecretName,
+				Namespace: namespace,
+			},
+			ProviderSpec: &runtime.RawExtension{
+				Object: &awsSpec,
+			},
+		},
+	}
+
+	err = r.CreateOrUpdateResource(nil, "", &request)
+	if err != nil {
+		log.Error(err, "unable to create or update ", "credential request", request)
+		return err
+	}
+
+	return nil
+}
+
+func (r *ReconcileEgressIPAM) getAWSCredentials() (id string, key string, err error) {
+	namespace, err := getOperatorNamespace()
+	if err != nil {
+		log.Error(err, "unable to get operator's namespace")
+		return "", "", err
+	}
+	awsCredentialSecret := &corev1.Secret{}
+	err = r.GetClient().Get(context.TODO(), types.NamespacedName{
+		Name:      aWSCredentialsSecretName,
+		Namespace: namespace,
+	}, awsCredentialSecret)
+	if err != nil {
+		log.Error(err, "unable to retrive aws credential ", "secret", types.NamespacedName{
+			Name:      aWSCredentialsSecretName,
+			Namespace: namespace,
+		})
+		return "", "", err
+	}
+
+	// aws_access_key_id: QUtJQVRKVjUyWVhTV1dTRFhQTEI=
+	// aws_secret_access_key: ZzlTQzR1VEd5YUV5ejhRZXVCYnMzOTgzZDlEQ216K1NESjJFVFNTYQ==
+
+	awsAccessKeyId, ok := awsCredentialSecret.Data["aws_access_key_id"]
+	if !ok {
+		err := errors.New("unable to find key aws_access_key_id in secret " + awsCredentialSecret.String())
+		log.Error(err, "")
+		return "", "", err
+	}
+
+	awsSecretAccessKey, ok := awsCredentialSecret.Data["aws_secret_access_key"]
+	if !ok {
+		err := errors.New("unable to find key aws_secret_access_key in secret " + awsCredentialSecret.String())
+		log.Error(err, "")
+		return "", "", err
+	}
+
+	return string(awsAccessKeyId), string(awsSecretAccessKey), nil
 }

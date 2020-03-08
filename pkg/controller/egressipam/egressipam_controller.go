@@ -2,16 +2,21 @@ package egressipam
 
 import (
 	"context"
+	errs "errors"
+	"os"
 	"reflect"
 
 	ocpconfigv1 "github.com/openshift/api/config/v1"
 	ocpnetv1 "github.com/openshift/api/network/v1"
+	"github.com/operator-framework/operator-sdk/pkg/k8sutil"
 	redhatcopv1alpha1 "github.com/redhat-cop/egressip-ipam-operator/pkg/apis/redhatcop/v1alpha1"
 	"github.com/redhat-cop/operator-utils/pkg/util"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/rest"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -54,6 +59,21 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	if !ok {
 		log.Info("unable to convert to ReconcileEgressIPAM from ", "reconciler", r)
 	}
+
+	infrastructure, err := getInfrastructure(mgr.GetConfig())
+	if err != nil {
+		log.Error(err, "Unable to retrieve current cluster infrastructure")
+		return err
+	}
+	if infrastructure.Status.Platform == ocpconfigv1.AWSPlatformType {
+		// create credential request
+		err := reconcileEgressIPAM.createAWSCredentialRequest()
+		if err != nil {
+			log.Error(err, "unable to create credential request")
+			return err
+		}
+	}
+
 	// Create a new controller
 	c, err := controller.New(controllerName, mgr, controller.Options{Reconciler: r})
 	if err != nil {
@@ -239,29 +259,11 @@ func (r *ReconcileEgressIPAM) Reconcile(request reconcile.Request) (reconcile.Re
 		return reconcile.Result{}, err
 	}
 
-	// high-level description of the reconciliation cycle for bare metal
-	// 1. load all the nodes that comply with the additional filters of this egressIPAM
-	// 2. sort the nodes by node_label/value so to have a maps of CIDR:[]node
-	// 3. verify that each corresponding hostsubnet has the correct CIDR
-	// 4. load all the namespaces with the egressIP annotation that applies to this egressIPAM
-	// 5. load from the status the current IP assignments so to have a map namespace:[]ip
-	// 6. verify that each namespace in the list at #4 has an ip, if not assign an ip finding the next available in the corresponding range.
-	// 7. ensure that all corresponding netnamespace have the egressIP assigned as per the map
-	// 8. annotate the assigment on the namespace
-
-	// high-level descritpion of the reconciliation cycle for AWS
-	// 1. load all the nodes that comply with the additional filters of this egressIPAM
-	// 2. from the status load the map of assigned egress ip -> egressip:namespace:node
-	// 3. load all the namespaces with the egressIP annotation that applies to this egressIPAM
-	// 4. create a left and right outer joins between the namespaces at #3 and at #2.
-	// 5. for namespaces that don't need egress IP anymore remove the annotation on the hostsubnet and the assiciation of ip:interface in AWS
-	// 5.1. remove the egressIP from the hostsubnet
-	// 5.2. remove the agressIP association with the AWS interface
-	// 6. for namespaces that need an egress IP, select and new IP, and a node in the correct AZ
-	// 6.1. add the association in AWS
-	// 6.2. add the egressIP to the hostsubnet
-	// 6.3. add the egressIP to the netnamespace
-	// 7. annotate the assigments on the namespace
+	// high-level common desing for all platforms:
+	// 1. load all namespaces referring this egressIPAM and sort them between those that have egress IPs assigned and those who haven't
+	// 2. assign egress IPs to namespaces that don't have IPs assigned. One IP per CIDR from egressIPAM. Pick IPs that are available in that CIDR, based on the already assigned IPs
+	// 3. update namespace assignment annotation (this is the source of truth for assignements)
+	// 4. reconcile netnamespaces
 
 	//get all namespaces that refer this instance and opt in into egressIPs
 	unassignedNamespaces, assignedNamespaces, err := r.getReferringNamespaces(instance)
@@ -286,11 +288,16 @@ func (r *ReconcileEgressIPAM) Reconcile(request reconcile.Request) (reconcile.Re
 		return r.ManageError(instance, err)
 	}
 
-	infrastrcuture, err := r.getInfrastructure()
+	infrastrcuture, err := getInfrastructure(r.GetRestConfig())
 	if err != nil {
 		log.Error(err, "unable to retrieve cluster infrastrcuture information")
 		return r.ManageError(instance, err)
 	}
+
+	// high-level desing specific for bare metal
+	// 1. load all the nodes that comply with the additional filters of this egressIPAM
+	// 2. sort the nodes by node_label/value so to have a maps of CIDR:[]node
+	// 3. reconcile the hostsubnets assigning CIDRs as per the map created at #2
 
 	//baremetal
 	if infrastrcuture.Status.Platform == ocpconfigv1.NonePlatformType {
@@ -307,7 +314,21 @@ func (r *ReconcileEgressIPAM) Reconcile(request reconcile.Request) (reconcile.Re
 		return r.ManageSuccess(instance)
 	}
 
+	// high-level desing specific for AWS
+	// 1. load all the nodes that comply with the additional filters of this egressIPAM
+	// 2. sort the nodes by node_label/value so to have a maps of CIDR:[]node
+	// 3. load all the secondary IPs assigned to AWS instances by node
+	// 4. comparing with general #3, free the assigned AWS seocndary IPs that are not needed anymore
+	// 5. assign IPs to nodes, considering the currently assigned IPs (we try not to move the currently assigned IPs)
+	// 6. reconcile assigned IP to nodes with secondary IPs assigned to AWS machines
+	// 7. reconcile assigned IP to nodes with correcponing hostsubnet
+
 	if infrastrcuture.Status.Platform == ocpconfigv1.AWSPlatformType {
+		_, _, err := r.getAWSCredentials()
+		if err != nil {
+			log.Error(err, "unable to retrieve aws credentials")
+			return r.ManageError(instance, err)
+		}
 		nodesByCIDR, err := r.getSelectedNodesByCIDR(instance)
 		if err != nil {
 			log.Error(err, "unable to get nodes selected by ", "instance", instance)
@@ -325,7 +346,7 @@ func (r *ReconcileEgressIPAM) Reconcile(request reconcile.Request) (reconcile.Re
 		}
 		err = r.removeAWSUnusedIPs(awsAssignedIPsByNode, assignedIPsByCIDR)
 		if err != nil {
-			log.Error(err, "unable to remove AWS unused IPs")
+			log.Error(err, "unable to remove AWS == ocpconfigv1.AWSPlatformTypeunused IPs")
 			return r.ManageError(instance, err)
 		}
 		assignedIPsByNode, err := assignIPsToNodes(nodesByCIDR, assignedIPsByCIDR)
@@ -348,9 +369,14 @@ func (r *ReconcileEgressIPAM) Reconcile(request reconcile.Request) (reconcile.Re
 	return r.ManageSuccess(instance)
 }
 
-func (r *ReconcileEgressIPAM) getInfrastructure() (*ocpconfigv1.Infrastructure, error) {
+func getInfrastructure(cfg *rest.Config) (*ocpconfigv1.Infrastructure, error) {
 	infrastructure := &ocpconfigv1.Infrastructure{}
-	err := r.GetClient().Get(context.TODO(), types.NamespacedName{
+	client, err := client.New(cfg, client.Options{})
+	if err != nil {
+		log.Error(err, "unable to create client from ", "config", cfg)
+		return &ocpconfigv1.Infrastructure{}, err
+	}
+	err = client.Get(context.TODO(), types.NamespacedName{
 		Name: "cluster",
 	}, infrastructure)
 	if err != nil {
@@ -358,4 +384,16 @@ func (r *ReconcileEgressIPAM) getInfrastructure() (*ocpconfigv1.Infrastructure, 
 		return &ocpconfigv1.Infrastructure{}, err
 	}
 	return infrastructure, nil
+}
+
+func getOperatorNamespace() (string, error) {
+	namespace, err := k8sutil.GetOperatorNamespace()
+	if err != nil {
+		namespace, ok := os.LookupEnv("NAMESPACE")
+		if !ok {
+			return "", errs.New("unable to infer namespace in which operator is running")
+		}
+		return namespace, nil
+	}
+	return namespace, nil
 }
