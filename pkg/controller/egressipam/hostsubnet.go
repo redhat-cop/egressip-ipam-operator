@@ -2,7 +2,6 @@ package egressipam
 
 import (
 	"context"
-	"errors"
 	"net"
 	"reflect"
 
@@ -83,23 +82,42 @@ func (e *enqueForSelectingEgressIPAMHostSubnet) Generic(evt event.GenericEvent, 
 }
 
 // ensures that hostsubntes have the correct egressIPs
-func (r *ReconcileEgressIPAM) reconcileHSAssignedIPs(nodeAssignedIPs map[*corev1.Node][]net.IP) error {
-	return errors.New("not implemented")
+func (r *ReconcileEgressIPAM) reconcileHSAssignedIPs(nodeAssignedIPs map[string][]net.IP) error {
+	for node, ips := range nodeAssignedIPs {
+		hostsubnet, err := r.getHostSubnet(node)
+		if err != nil {
+			log.Error(err, "unable to lookup hostsubnet for ", "node", node)
+			return err
+		}
+		ipsstr := []string{}
+		for _, ip := range ips {
+			ipsstr = append(ipsstr, ip.String())
+		}
+		if !reflect.DeepEqual(ipsstr, hostsubnet.EgressIPs) {
+			hostsubnet.EgressIPs = ipsstr
+			err := r.GetClient().Update(context.TODO(), &hostsubnet, &client.UpdateOptions{})
+			if err != nil {
+				log.Error(err, "unable to update", "hostsubnet ", hostsubnet, "with ips", ipsstr)
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // ensures that hostsubnets have the correct CIDR
-func (r *ReconcileEgressIPAM) assignCIDRsToHostSubnets(nodeByCIDR map[*net.IPNet][]corev1.Node) error {
+func (r *ReconcileEgressIPAM) assignCIDRsToHostSubnets(nodeByCIDR map[string][]corev1.Node) error {
 	for cidr, nodes := range nodeByCIDR {
-		cidrs := []string{cidr.String()}
+		cidrs := []string{cidr}
 		for _, node := range nodes {
-			hostsubnet, err := r.getHostSubnet(&node)
+			hostsubnet, err := r.getHostSubnet(node.GetName())
 			if err != nil {
 				log.Error(err, "unable to lookup hostsubnet for ", "node", node)
 				return err
 			}
 			if !reflect.DeepEqual(hostsubnet.EgressCIDRs, cidrs) {
 				hostsubnet.EgressCIDRs = cidrs
-				err := r.GetClient().Update(context.TODO(), hostsubnet, &client.UpdateOptions{})
+				err := r.GetClient().Update(context.TODO(), &hostsubnet, &client.UpdateOptions{})
 				if err != nil {
 					log.Error(err, "unable to update", "hostsubnet ", hostsubnet, "with cidrs", cidrs)
 					return err
@@ -110,10 +128,10 @@ func (r *ReconcileEgressIPAM) assignCIDRsToHostSubnets(nodeByCIDR map[*net.IPNet
 	return nil
 }
 
-func (r *ReconcileEgressIPAM) getHostSubnet(node *corev1.Node) (ocpnetv1.HostSubnet, error) {
+func (r *ReconcileEgressIPAM) getHostSubnet(node string) (ocpnetv1.HostSubnet, error) {
 	hostsubnet := &ocpnetv1.HostSubnet{}
 	err := r.GetClient().Get(context.TODO(), types.NamespacedName{
-		Name: node.GetName(),
+		Name: node,
 	}, hostsubnet)
 	if err != nil {
 		log.Error(err, "unable to get hostsubnet for ", "node", node)

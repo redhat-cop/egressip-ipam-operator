@@ -329,27 +329,22 @@ func (r *ReconcileEgressIPAM) Reconcile(request reconcile.Request) (reconcile.Re
 			log.Error(err, "unable to retrieve aws credentials")
 			return r.ManageError(instance, err)
 		}
-		nodesByCIDR, err := r.getSelectedNodesByCIDR(instance)
+		assignedIPsByNode, err := r.getAssignedIPsByNode(instance)
 		if err != nil {
-			log.Error(err, "unable to get nodes selected by ", "instance", instance)
+			log.Error(err, "unable to get assigned IPs by nodes ", "instance", instance)
 			return r.ManageError(instance, err)
 		}
-		assignedIPsByCIDR, err := sortIPsByCIDR(assignedNamespaces, instance)
-		if err != nil {
-			log.Error(err, "unable sort assigned IPs by CIDR")
-			return r.ManageError(instance, err)
-		}
-		awsAssignedIPsByNode, err := r.getAWSAssignedIPsByNode(nodesByCIDR, instance)
+		awsAssignedIPsByNode, err := r.getAWSAssignedIPsByNode(instance)
 		if err != nil {
 			log.Error(err, "unable to get assigned AWS secondary IPs")
 			return r.ManageError(instance, err)
 		}
-		err = r.removeAWSUnusedIPs(awsAssignedIPsByNode, assignedIPsByCIDR)
+		err = r.removeAWSUnusedIPs(awsAssignedIPsByNode, assignedIPsByNode)
 		if err != nil {
-			log.Error(err, "unable to remove AWS == ocpconfigv1.AWSPlatformTypeunused IPs")
+			log.Error(err, "unable to remove assigned AWS IPs")
 			return r.ManageError(instance, err)
 		}
-		assignedIPsByNode, err := assignIPsToNodes(nodesByCIDR, assignedIPsByCIDR)
+		assignedIPsByNode, err = r.assignIPsToNodes(assignedIPsByNode, assignedNamespaces, instance)
 		if err != nil {
 			log.Error(err, "unable to assign egress IPs to nodes")
 			return r.ManageError(instance, err)
