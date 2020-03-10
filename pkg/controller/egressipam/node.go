@@ -85,32 +85,25 @@ func (r *ReconcileEgressIPAM) getNode(hostsubnet *ocpnetv1.HostSubnet) (corev1.N
 }
 
 // returns nodes selected by this egressIPAM sorted by the CIDR
-func (r *ReconcileEgressIPAM) getSelectedNodesByCIDR(egressIPAM *redhatcopv1alpha1.EgressIPAM) (map[*net.IPNet][]corev1.Node, error) {
-	nodeList := &corev1.NodeList{}
-	selector, err := metav1.LabelSelectorAsSelector(&egressIPAM.Spec.NodeSelector)
+func (r *ReconcileEgressIPAM) getSelectedNodesByCIDR(egressIPAM *redhatcopv1alpha1.EgressIPAM) (map[string][]corev1.Node, error) {
+	nodes, err := r.getSelectedNodes(egressIPAM)
 	if err != nil {
-		log.Error(err, "unable to create selector from label selector", "selector", &egressIPAM.Spec.NodeSelector)
-		return map[*net.IPNet][]corev1.Node{}, err
+		log.Error(err, "unabler to get selected nodes for ", "egressIPAM", egressIPAM)
+		return map[string][]corev1.Node{}, err
 	}
-	err = r.GetClient().List(context.TODO(), nodeList, &client.ListOptions{
-		LabelSelector: selector,
-	})
-	if err != nil {
-		log.Error(err, "unable to list sleected nodes", "selector", egressIPAM.Spec.NodeSelector)
-		return map[*net.IPNet][]corev1.Node{}, err
-	}
-	selectedNdesByCIDR := map[*net.IPNet][]corev1.Node{}
-	CIDRbyLabel := map[string]*net.IPNet{}
+	selectedNdesByCIDR := map[string][]corev1.Node{}
+	CIDRbyLabel := map[string]string{}
 	for _, cidrAssignment := range egressIPAM.Spec.CIDRAssignments {
-		_, cidr, err := net.ParseCIDR(cidrAssignment.CIDR)
+		_, _, err := net.ParseCIDR(cidrAssignment.CIDR)
 		if err != nil {
 			log.Error(err, "unable to parse", "cidr", cidrAssignment.CIDR)
-			return map[*net.IPNet][]corev1.Node{}, err
+			return map[string][]corev1.Node{}, err
 		}
-		CIDRbyLabel[cidrAssignment.LabelValue] = cidr
-		selectedNdesByCIDR[cidr] = []corev1.Node{}
+
+		CIDRbyLabel[cidrAssignment.LabelValue] = cidrAssignment.CIDR
+		selectedNdesByCIDR[cidrAssignment.CIDR] = []corev1.Node{}
 	}
-	for _, node := range nodeList.Items {
+	for _, node := range nodes {
 		if value, ok := node.GetLabels()[egressIPAM.Spec.NodeLabel]; ok {
 			if cidr, ok := CIDRbyLabel[value]; ok {
 				selectedNdesByCIDR[cidr] = append(selectedNdesByCIDR[cidr], node)
@@ -118,4 +111,43 @@ func (r *ReconcileEgressIPAM) getSelectedNodesByCIDR(egressIPAM *redhatcopv1alph
 		}
 	}
 	return selectedNdesByCIDR, nil
+}
+
+func (r *ReconcileEgressIPAM) getSelectedNodes(egressIPAM *redhatcopv1alpha1.EgressIPAM) ([]corev1.Node, error) {
+	nodeList := &corev1.NodeList{}
+	selector, err := metav1.LabelSelectorAsSelector(&egressIPAM.Spec.NodeSelector)
+	if err != nil {
+		log.Error(err, "unable to create selector from label selector", "selector", &egressIPAM.Spec.NodeSelector)
+		return []corev1.Node{}, err
+	}
+	err = r.GetClient().List(context.TODO(), nodeList, &client.ListOptions{
+		LabelSelector: selector,
+	})
+	if err != nil {
+		log.Error(err, "unable to list sleected nodes", "selector", egressIPAM.Spec.NodeSelector)
+		return []corev1.Node{}, err
+	}
+	return nodeList.Items, nil
+}
+
+func (r *ReconcileEgressIPAM) getAssignedIPsByNode(egressIPAM *redhatcopv1alpha1.EgressIPAM) (map[string][]net.IP, error) {
+	assignedIPsByNode := map[string][]net.IP{}
+	nodes, err := r.getSelectedNodes(egressIPAM)
+	if err != nil {
+		log.Error(err, "unable to get selected nodes for ", "egressIPAM", egressIPAM)
+		return map[string][]net.IP{}, err
+	}
+	for _, node := range nodes {
+		hostsubnet, err := r.getHostSubnet(node.GetName())
+		if err != nil {
+			log.Error(err, "unable to get hostsubnet for ", "node", node)
+			return map[string][]net.IP{}, err
+		}
+		IPs := []net.IP{}
+		for _, ipstr := range hostsubnet.EgressIPs {
+			IPs = append(IPs, net.ParseIP(ipstr))
+		}
+		assignedIPsByNode[node.GetName()] = IPs
+	}
+	return assignedIPsByNode, nil
 }

@@ -16,18 +16,18 @@ import (
 const aWSCredentialsSecretName = "egress-ipam-operator-cloud-credentials"
 
 // returns nodes selected by this egressIPAM sorted by the CIDR
-func (r *ReconcileEgressIPAM) getAWSAssignedIPsByNode(nodesByCIDR map[*net.IPNet][]corev1.Node, egressIPAM *redhatcopv1alpha1.EgressIPAM) (map[*corev1.Node][]net.IP, error) {
+func (r *ReconcileEgressIPAM) getAWSAssignedIPsByNode(egressIPAM *redhatcopv1alpha1.EgressIPAM) (map[*corev1.Node][]net.IP, error) {
 	//the CIDR and egressIPAM can be used to lookup the AZ.
 	return map[*corev1.Node][]net.IP{}, errors.New("not implemented")
 }
 
 // removes AWS secondary IPs that are currently assigned but not needed
-func (r *ReconcileEgressIPAM) removeAWSUnusedIPs(awsAssignedIPsByNode map[*corev1.Node][]net.IP, assignedIPsByCIDR map[*net.IPNet][]net.IP) error {
+func (r *ReconcileEgressIPAM) removeAWSUnusedIPs(awsAssignedIPsByNode map[*corev1.Node][]net.IP, assignedIPsByNode map[string][]net.IP) error {
 	return errors.New("not implemented")
 }
 
 // assigns secondary IPs to AWS machines
-func (r *ReconcileEgressIPAM) reconcileAWSAssignedIPs(assignedIPsByNode map[*corev1.Node][]net.IP, egressIPAM *redhatcopv1alpha1.EgressIPAM) error {
+func (r *ReconcileEgressIPAM) reconcileAWSAssignedIPs(assignedIPsByNode map[string][]net.IP, egressIPAM *redhatcopv1alpha1.EgressIPAM) error {
 	return errors.New("not implemented")
 }
 

@@ -8,6 +8,7 @@ require (
 	github.com/openshift/cloud-credential-operator v0.0.0-20200303191255-cc686af9c1b9
 	github.com/operator-framework/operator-sdk v0.14.0
 	github.com/redhat-cop/operator-utils v0.1.1
+	github.com/scylladb/go-set v1.0.2
 	github.com/spf13/pflag v1.0.5
 	k8s.io/api v0.0.0
 	k8s.io/apimachinery v0.17.0
