@@ -3,6 +3,7 @@ module github.com/redhat-cop/egressip-ipam-operator
 go 1.13
 
 require (
+	github.com/aws/aws-sdk-go v1.17.7
 	github.com/jpillora/ipmath v0.0.0-20180121110145-ebede80a2ab9
 	github.com/openshift/api v3.9.1-0.20190924102528-32369d4db2ad+incompatible
 	github.com/openshift/cloud-credential-operator v0.0.0-20200303191255-cc686af9c1b9

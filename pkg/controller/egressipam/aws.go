@@ -5,6 +5,11 @@ import (
 	"errors"
 	"net"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/ec2"
+	ocpconfigv1 "github.com/openshift/api/config/v1"
 	cloudcredentialv1 "github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1"
 	redhatcopv1alpha1 "github.com/redhat-cop/egressip-ipam-operator/pkg/apis/redhatcop/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
@@ -14,6 +19,12 @@ import (
 )
 
 const aWSCredentialsSecretName = "egress-ipam-operator-cloud-credentials"
+
+func getAWSClient(id string, key string, infra *ocpconfigv1.Infrastructure) (*ec2.EC2, error) {
+	mySession := session.Must(session.NewSession())
+	client := ec2.New(mySession, aws.NewConfig().WithCredentials(credentials.NewStaticCredentials(id, key, "")).WithRegion(infra.Status.PlatformStatus.AWS.Region))
+	return client, nil
+}
 
 // returns nodes selected by this egressIPAM sorted by the CIDR
 func (r *ReconcileEgressIPAM) getAWSAssignedIPsByNode(egressIPAM *redhatcopv1alpha1.EgressIPAM) (map[*corev1.Node][]net.IP, error) {
