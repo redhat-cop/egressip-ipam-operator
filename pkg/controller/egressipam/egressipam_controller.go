@@ -3,6 +3,7 @@ package egressipam
 import (
 	"context"
 	errs "errors"
+	"net"
 	"os"
 	"reflect"
 
@@ -265,6 +266,37 @@ func (r *ReconcileEgressIPAM) Reconcile(request reconcile.Request) (reconcile.Re
 		return reconcile.Result{}, err
 	}
 
+	if ok, err := r.IsValid(instance); !ok {
+		return r.ManageError(instance, err)
+	}
+
+	if ok := r.IsInitialized(instance); !ok {
+		err := r.GetClient().Update(context.TODO(), instance)
+		if err != nil {
+			log.Error(err, "unable to update instance", "instance", instance)
+			return r.ManageError(instance, err)
+		}
+		return reconcile.Result{}, nil
+	}
+
+	if util.IsBeingDeleted(instance) {
+		if !util.HasFinalizer(instance, controllerName) {
+			return reconcile.Result{}, nil
+		}
+		err := r.manageCleanUpLogic(instance)
+		if err != nil {
+			log.Error(err, "unable to delete instance", "instance", instance)
+			return r.ManageError(instance, err)
+		}
+		util.RemoveFinalizer(instance, controllerName)
+		err = r.GetClient().Update(context.TODO(), instance)
+		if err != nil {
+			log.Error(err, "unable to update instance", "instance", instance)
+			return r.ManageError(instance, err)
+		}
+		return reconcile.Result{}, nil
+	}
+
 	// high-level common desing for all platforms:
 	// 1. load all namespaces referring this egressIPAM and sort them between those that have egress IPs assigned and those who haven't
 	// 2. assign egress IPs to namespaces that don't have IPs assigned. One IP per CIDR from egressIPAM. Pick IPs that are available in that CIDR, based on the already assigned IPs
@@ -330,12 +362,7 @@ func (r *ReconcileEgressIPAM) Reconcile(request reconcile.Request) (reconcile.Re
 	// 7. reconcile assigned IP to nodes with correcponing hostsubnet
 
 	if infrastrcuture.Status.Platform == ocpconfigv1.AWSPlatformType {
-		id, key, err := r.getAWSCredentials()
-		if err != nil {
-			log.Error(err, "unable to retrieve aws credentials")
-			return r.ManageError(instance, err)
-		}
-		client, err := getAWSClient(id, key, infrastrcuture)
+		client, err := r.getAWSClient()
 		if err != nil {
 			log.Error(err, "unable to get initialize AWS client")
 			return r.ManageError(instance, err)
@@ -429,4 +456,64 @@ func getOperatorNamespace() (string, error) {
 		return namespace, nil
 	}
 	return namespace, nil
+}
+
+func (r *ReconcileEgressIPAM) IsValid(obj metav1.Object) (bool, error) {
+	ergessIPAM, ok := obj.(*redhatcopv1alpha1.EgressIPAM)
+	if !ok {
+		return false, errs.New("unable to conver to egressIPAM")
+	}
+	for _, CIDRAssignemnt := range ergessIPAM.Spec.CIDRAssignments {
+		_, _, err := net.ParseCIDR(CIDRAssignemnt.CIDR)
+		if err != nil {
+			log.Error(err, "unable to conver to", "cidr", CIDRAssignemnt.CIDR)
+			return false, err
+		}
+	}
+	return true, nil
+}
+
+func (r *ReconcileEgressIPAM) IsInitialized(obj metav1.Object) bool {
+	isInitialized := true
+	ergessIPAM, ok := obj.(*redhatcopv1alpha1.EgressIPAM)
+	if !ok {
+		log.Error(errs.New("unable to conver to egressIPAM"), "unable to conver to egressIPAM")
+		return false
+	}
+	if !util.HasFinalizer(ergessIPAM, controllerName) {
+		util.AddFinalizer(ergessIPAM, controllerName)
+		isInitialized = false
+	}
+	return isInitialized
+}
+
+func (r *ReconcileEgressIPAM) manageCleanUpLogic(egressIPAM *redhatcopv1alpha1.EgressIPAM) error {
+	// remove assigned IPs from namespaces
+	err := r.removeNamespaceAssignedIPs(egressIPAM)
+	if err != nil {
+		log.Error(err, "unable to remove IPs assigned to namespaces referring to ", "egressIPAM", egressIPAM)
+		return err
+	}
+
+	// remove all assigned IPs/CIDRs from hostsubnets
+	err = r.removeHostsubnetAssignedIPsCIDRsAssigned(egressIPAM)
+	if err != nil {
+		log.Error(err, "unable to remove IPs/CIDRs assigned to hostsubnets selected by ", "egressIPAM", egressIPAM)
+		return err
+	}
+
+	// if aws remove all secondary assigned IPs from AWS instances
+	infrastrcuture, err := r.getInfrastructure()
+	if err != nil {
+		log.Error(err, "unable to retrieve cluster infrastrcuture information")
+		return err
+	}
+	if infrastrcuture.Status.Platform == ocpconfigv1.AWSPlatformType {
+		err = r.removeAWSAssignedIPs(egressIPAM)
+		if err != nil {
+			log.Error(err, "unable to remove aws assigned IPs")
+			return err
+		}
+	}
+	return nil
 }

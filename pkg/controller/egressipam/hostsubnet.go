@@ -5,6 +5,7 @@ import (
 	"reflect"
 
 	ocpnetv1 "github.com/openshift/api/network/v1"
+	redhatcopv1alpha1 "github.com/redhat-cop/egressip-ipam-operator/pkg/apis/redhatcop/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
@@ -137,4 +138,29 @@ func (r *ReconcileEgressIPAM) getHostSubnet(node string) (ocpnetv1.HostSubnet, e
 		return ocpnetv1.HostSubnet{}, nil
 	}
 	return *hostsubnet, nil
+}
+
+func (r *ReconcileEgressIPAM) removeHostsubnetAssignedIPsCIDRsAssigned(egressIPAM *redhatcopv1alpha1.EgressIPAM) error {
+	nodes, err := r.getSelectedNodes(egressIPAM)
+	if err != nil {
+		log.Error(err, "unable to get selected nodes for ", "egressIPAM", egressIPAM)
+		return err
+	}
+	for _, node := range nodes {
+		hostsubnet, err := r.getHostSubnet(node.GetName())
+		if err != nil {
+			log.Error(err, "unable to get hostsubnet for ", "node", node.GetName())
+			return err
+		}
+		if !reflect.DeepEqual(hostsubnet.EgressCIDRs, []string{}) || !reflect.DeepEqual(hostsubnet.EgressIPs, []string{}) {
+			hostsubnet.EgressCIDRs = []string{}
+			hostsubnet.EgressIPs = []string{}
+			err := r.GetClient().Update(context.TODO(), &hostsubnet, &client.UpdateOptions{})
+			if err != nil {
+				log.Error(err, "unable to upadate ", "hostsubnet", hostsubnet)
+				return err
+			}
+		}
+	}
+	return nil
 }
