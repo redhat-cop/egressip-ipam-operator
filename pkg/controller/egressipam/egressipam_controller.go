@@ -15,7 +15,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -28,6 +27,10 @@ import (
 )
 
 const controllerName = "egressipam-controller"
+
+// name of the secret with the credential (cloud independent)
+const credentialsSecretName = "egress-ipam-operator-cloud-credentials"
+
 const namespaceAnnotation = "egressip-ipam-operator.redhat-cop.io/egressipam"
 
 // this is a comma-separated list of assigned ip address. There should be an IP from each of the CIDRs in the egressipam
@@ -60,7 +63,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		log.Info("unable to convert to ReconcileEgressIPAM from ", "reconciler", r)
 	}
 
-	infrastructure, err := getInfrastructure(mgr.GetConfig())
+	infrastructure, err := reconcileEgressIPAM.getInfrastructure()
 	if err != nil {
 		log.Error(err, "Unable to retrieve current cluster infrastructure")
 		return err
@@ -233,6 +236,8 @@ type ReconcileEgressIPAM struct {
 	// This client, initialized using mgr.Client() above, is a split client
 	// that reads objects from the cache and writes to the apiserver
 	util.ReconcilerBase
+	infrastructure ocpconfigv1.Infrastructure
+	creds          corev1.Secret
 }
 
 // Reconcile reads that state of the cluster for a EgressIPAM object and makes changes based on the state read
@@ -289,7 +294,7 @@ func (r *ReconcileEgressIPAM) Reconcile(request reconcile.Request) (reconcile.Re
 		return r.ManageError(instance, err)
 	}
 
-	infrastrcuture, err := getInfrastructure(r.GetRestConfig())
+	infrastrcuture, err := r.getInfrastructure()
 	if err != nil {
 		log.Error(err, "unable to retrieve cluster infrastrcuture information")
 		return r.ManageError(instance, err)
@@ -368,11 +373,14 @@ func (r *ReconcileEgressIPAM) Reconcile(request reconcile.Request) (reconcile.Re
 	return r.ManageSuccess(instance)
 }
 
-func getInfrastructure(cfg *rest.Config) (*ocpconfigv1.Infrastructure, error) {
+func (r *ReconcileEgressIPAM) getInfrastructure() (*ocpconfigv1.Infrastructure, error) {
+	if !reflect.DeepEqual(r.infrastructure, ocpconfigv1.Infrastructure{}) {
+		return &r.infrastructure, nil
+	}
 	infrastructure := &ocpconfigv1.Infrastructure{}
-	client, err := client.New(cfg, client.Options{})
+	client, err := client.New(r.GetRestConfig(), client.Options{})
 	if err != nil {
-		log.Error(err, "unable to create client from ", "config", cfg)
+		log.Error(err, "unable to create client from ", "config", r.GetRestConfig())
 		return &ocpconfigv1.Infrastructure{}, err
 	}
 	err = client.Get(context.TODO(), types.NamespacedName{
@@ -382,7 +390,33 @@ func getInfrastructure(cfg *rest.Config) (*ocpconfigv1.Infrastructure, error) {
 		log.Error(err, "unable to retrieve cluster's infrastrcuture resource ")
 		return &ocpconfigv1.Infrastructure{}, err
 	}
-	return infrastructure, nil
+	r.infrastructure = *infrastructure
+	return &r.infrastructure, nil
+}
+
+func (r *ReconcileEgressIPAM) getCredentialSecret() (*corev1.Secret, error) {
+	if !reflect.DeepEqual(r.creds, corev1.Secret{}) {
+		return &r.creds, nil
+	}
+	namespace, err := getOperatorNamespace()
+	if err != nil {
+		log.Error(err, "unable to get operator's namespace")
+		return &corev1.Secret{}, err
+	}
+	credentialSecret := &corev1.Secret{}
+	err = r.GetClient().Get(context.TODO(), types.NamespacedName{
+		Name:      credentialsSecretName,
+		Namespace: namespace,
+	}, credentialSecret)
+	if err != nil {
+		log.Error(err, "unable to retrive aws credential ", "secret", types.NamespacedName{
+			Name:      credentialsSecretName,
+			Namespace: namespace,
+		})
+		return &corev1.Secret{}, err
+	}
+	r.creds = *credentialSecret
+	return &r.creds, nil
 }
 
 func getOperatorNamespace() (string, error) {

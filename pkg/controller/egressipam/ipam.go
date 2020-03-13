@@ -43,7 +43,7 @@ func (r *ReconcileEgressIPAM) assignIPsToNamespaces(unassignedNamespaces []corev
 		IPsByCIDR[cidr] = append(IPsByCIDR[cidr], nodesIPsByCIDR[cidr]...)
 	}
 	// if in AWS we have some reserved addresses:
-	infrastructure, err := getInfrastructure(r.GetRestConfig())
+	infrastructure, err := r.getInfrastructure()
 	if err != nil {
 		log.Error(err, "unable to get infrastructure")
 		return []corev1.Namespace{}, err

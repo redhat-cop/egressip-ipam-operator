@@ -1,7 +1,6 @@
 package egressipam
 
 import (
-	"context"
 	"errors"
 	"strings"
 
@@ -15,10 +14,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 )
-
-const aWSCredentialsSecretName = "egress-ipam-operator-cloud-credentials"
 
 func getAWSClient(id string, key string, infra *ocpconfigv1.Infrastructure) (*ec2.EC2, error) {
 	mySession := session.Must(session.NewSession())
@@ -155,7 +151,7 @@ func (r *ReconcileEgressIPAM) createAWSCredentialRequest() error {
 		},
 		Spec: cloudcredentialv1.CredentialsRequestSpec{
 			SecretRef: corev1.ObjectReference{
-				Name:      aWSCredentialsSecretName,
+				Name:      credentialsSecretName,
 				Namespace: namespace,
 			},
 			ProviderSpec: &runtime.RawExtension{
@@ -174,21 +170,9 @@ func (r *ReconcileEgressIPAM) createAWSCredentialRequest() error {
 }
 
 func (r *ReconcileEgressIPAM) getAWSCredentials() (id string, key string, err error) {
-	namespace, err := getOperatorNamespace()
+	awsCredentialSecret, err := r.getCredentialSecret()
 	if err != nil {
-		log.Error(err, "unable to get operator's namespace")
-		return "", "", err
-	}
-	awsCredentialSecret := &corev1.Secret{}
-	err = r.GetClient().Get(context.TODO(), types.NamespacedName{
-		Name:      aWSCredentialsSecretName,
-		Namespace: namespace,
-	}, awsCredentialSecret)
-	if err != nil {
-		log.Error(err, "unable to retrive aws credential ", "secret", types.NamespacedName{
-			Name:      aWSCredentialsSecretName,
-			Namespace: namespace,
-		})
+		log.Error(err, "unable to get credential secret")
 		return "", "", err
 	}
 
