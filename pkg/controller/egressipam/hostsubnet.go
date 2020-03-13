@@ -2,7 +2,6 @@ package egressipam
 
 import (
 	"context"
-	"net"
 	"reflect"
 
 	ocpnetv1 "github.com/openshift/api/network/v1"
@@ -82,7 +81,7 @@ func (e *enqueForSelectingEgressIPAMHostSubnet) Generic(evt event.GenericEvent, 
 }
 
 // ensures that hostsubntes have the correct egressIPs
-func (r *ReconcileEgressIPAM) reconcileHSAssignedIPs(nodeAssignedIPs map[string][]net.IP) error {
+func (r *ReconcileEgressIPAM) reconcileHSAssignedIPs(nodeAssignedIPs map[string][]string) error {
 	for node, ips := range nodeAssignedIPs {
 		hostsubnet, err := r.getHostSubnet(node)
 		if err != nil {
@@ -91,7 +90,7 @@ func (r *ReconcileEgressIPAM) reconcileHSAssignedIPs(nodeAssignedIPs map[string]
 		}
 		ipsstr := []string{}
 		for _, ip := range ips {
-			ipsstr = append(ipsstr, ip.String())
+			ipsstr = append(ipsstr, ip)
 		}
 		if !reflect.DeepEqual(ipsstr, hostsubnet.EgressIPs) {
 			hostsubnet.EgressIPs = ipsstr

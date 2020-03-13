@@ -3,7 +3,7 @@ package egressipam
 import (
 	"context"
 	"errors"
-	"net"
+	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -11,7 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	ocpconfigv1 "github.com/openshift/api/config/v1"
 	cloudcredentialv1 "github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1"
-	redhatcopv1alpha1 "github.com/redhat-cop/egressip-ipam-operator/pkg/apis/redhatcop/v1alpha1"
+	"github.com/scylladb/go-set/strset"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -26,20 +26,96 @@ func getAWSClient(id string, key string, infra *ocpconfigv1.Infrastructure) (*ec
 	return client, nil
 }
 
-// returns nodes selected by this egressIPAM sorted by the CIDR
-func (r *ReconcileEgressIPAM) getAWSAssignedIPsByNode(egressIPAM *redhatcopv1alpha1.EgressIPAM) (map[*corev1.Node][]net.IP, error) {
-	//the CIDR and egressIPAM can be used to lookup the AZ.
-	return map[*corev1.Node][]net.IP{}, errors.New("not implemented")
+func getAWSInstance(client *ec2.EC2, node corev1.Node) (*ec2.Instance, error) {
+	input := &ec2.DescribeInstancesInput{
+		InstanceIds: []*string{
+			aws.String(getAWSIDFromProviderID(node.Spec.ProviderID)),
+		},
+	}
+	result, err := client.DescribeInstances(input)
+	if err != nil {
+		log.Error(err, "unable to get aws ", "instance", getAWSIDFromProviderID(node.Spec.ProviderID))
+		return &ec2.Instance{}, err
+	}
+	return result.Reservations[0].Instances[0], nil
+}
+
+func getAWSIDFromProviderID(providerID string) string {
+	strs := strings.Split(providerID, "/")
+	return strs[len(strs)-1]
 }
 
 // removes AWS secondary IPs that are currently assigned but not needed
-func (r *ReconcileEgressIPAM) removeAWSUnusedIPs(awsAssignedIPsByNode map[*corev1.Node][]net.IP, assignedIPsByNode map[string][]net.IP) error {
-	return errors.New("not implemented")
+func (r *ReconcileEgressIPAM) removeAWSUnusedIPs(client *ec2.EC2, nodeMap map[string]corev1.Node, assignedIPsByNode map[string][]string) error {
+	for node, assidnedIPsToNode := range assignedIPsByNode {
+		instance, err := getAWSInstance(client, nodeMap[node])
+		if err != nil {
+			log.Error(err, "unable to get aws instance for", "node", node)
+			return err
+		}
+		awsAssignedIPs := []string{}
+		for _, ipipas := range instance.NetworkInterfaces[0].PrivateIpAddresses {
+			if !(*ipipas.Primary) {
+				awsAssignedIPs = append(awsAssignedIPs, *ipipas.PrivateIpAddress)
+			}
+		}
+		toBeRemovedIPs := strset.Difference(strset.New(awsAssignedIPs...), strset.New(assidnedIPsToNode...)).List()
+		if len(toBeRemovedIPs) > 0 {
+			log.Info("vm", "instance ", instance.InstanceId, " will be freed from IPs ", toBeRemovedIPs)
+			toBeRemovedIPsAWSStr := []*string{}
+			for _, ip := range toBeRemovedIPs {
+				toBeRemovedIPsAWSStr = append(toBeRemovedIPsAWSStr, &ip)
+			}
+
+			input := &ec2.UnassignPrivateIpAddressesInput{
+				NetworkInterfaceId: instance.NetworkInterfaces[0].NetworkInterfaceId,
+				PrivateIpAddresses: toBeRemovedIPsAWSStr,
+			}
+			_, err = client.UnassignPrivateIpAddresses(input)
+			if err != nil {
+				log.Error(err, "unable to remove IPs from ", "instance", instance.InstanceId)
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 // assigns secondary IPs to AWS machines
-func (r *ReconcileEgressIPAM) reconcileAWSAssignedIPs(assignedIPsByNode map[string][]net.IP, egressIPAM *redhatcopv1alpha1.EgressIPAM) error {
-	return errors.New("not implemented")
+func (r *ReconcileEgressIPAM) reconcileAWSAssignedIPs(client *ec2.EC2, nodeMap map[string]corev1.Node, assignedIPsByNode map[string][]string) error {
+	for node, assidnedIPsToNode := range assignedIPsByNode {
+		instance, err := getAWSInstance(client, nodeMap[node])
+		if err != nil {
+			log.Error(err, "unable to get aws instance for", "node", node)
+			return err
+		}
+		awsAssignedIPs := []string{}
+		for _, ipipas := range instance.NetworkInterfaces[0].PrivateIpAddresses {
+			if !*ipipas.Primary {
+				awsAssignedIPs = append(awsAssignedIPs, *ipipas.PrivateIpAddress)
+			}
+		}
+		toBeAssignedIPs := strset.Difference(strset.New(assidnedIPsToNode...), strset.New(awsAssignedIPs...)).List()
+		if len(toBeAssignedIPs) > 0 {
+			log.Info("vm", "instance ", instance.InstanceId, " will be assigned IPs ", toBeAssignedIPs)
+			toBeAssignedIPsAWSStr := []*string{}
+			for _, ip := range toBeAssignedIPs {
+				toBeAssignedIPsAWSStr = append(toBeAssignedIPsAWSStr, &ip)
+			}
+
+			input := &ec2.AssignPrivateIpAddressesInput{
+				NetworkInterfaceId: instance.NetworkInterfaces[0].NetworkInterfaceId,
+				PrivateIpAddresses: toBeAssignedIPsAWSStr,
+			}
+			_, err = client.AssignPrivateIpAddresses(input)
+			if err != nil {
+				log.Error(err, "unable to assigne IPs to ", "instance", instance.InstanceId)
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (r *ReconcileEgressIPAM) createAWSCredentialRequest() error {
@@ -48,7 +124,20 @@ func (r *ReconcileEgressIPAM) createAWSCredentialRequest() error {
 			APIVersion: "cloudcredential.openshift.io/v1",
 			Kind:       "AWSProviderSpec",
 		},
-		StatementEntries: []cloudcredentialv1.StatementEntry{},
+		StatementEntries: []cloudcredentialv1.StatementEntry{
+			cloudcredentialv1.StatementEntry{
+				Action: []string{
+					"ec2:DescribeInstances",
+					"ec2:UnassignPrivateIpAddresses",
+					"ec2:AssignPrivateIpAddresses",
+				},
+				Effect:   "Allow",
+				Resource: "*",
+				// "Key": "kubernetes.io/cluster/cluster-b92f-78s8h",
+				// "Value": "owned"
+
+			},
+		},
 	}
 	namespace, err := getOperatorNamespace()
 	if err != nil {
@@ -106,7 +195,7 @@ func (r *ReconcileEgressIPAM) getAWSCredentials() (id string, key string, err er
 	// aws_access_key_id: QUtJQVRKVjUyWVhTV1dTRFhQTEI=
 	// aws_secret_access_key: ZzlTQzR1VEd5YUV5ejhRZXVCYnMzOTgzZDlEQ216K1NESjJFVFNTYQ==
 
-	awsAccessKeyId, ok := awsCredentialSecret.Data["aws_access_key_id"]
+	awsAccessKeyID, ok := awsCredentialSecret.Data["aws_access_key_id"]
 	if !ok {
 		err := errors.New("unable to find key aws_access_key_id in secret " + awsCredentialSecret.String())
 		log.Error(err, "")
@@ -120,5 +209,5 @@ func (r *ReconcileEgressIPAM) getAWSCredentials() (id string, key string, err er
 		return "", "", err
 	}
 
-	return string(awsAccessKeyId), string(awsSecretAccessKey), nil
+	return string(awsAccessKeyID), string(awsSecretAccessKey), nil
 }

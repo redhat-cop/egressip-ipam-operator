@@ -78,9 +78,9 @@ oc new-project egressip-ipam-operator
 oc apply -f deploy/service_account.yaml -n egressip-ipam-operator
 oc apply -f deploy/role.yaml -n egressip-ipam-operator
 oc apply -f deploy/role_binding.yaml -n egressip-ipam-operator
-export token=$(oc serviceaccounts get-token 'egressip-ipam-operator')
+export token=$(oc serviceaccounts get-token 'egressip-ipam-operator' -n egressip-ipam-operator)
 oc login --token=${token}
-OPERATOR_NAME='egressip-ipam-operator' operator-sdk --verbose up local --namespace ""
+OPERATOR_NAME='egressip-ipam-operator' NAMESPACE='egressip-ipam-operator' operator-sdk --verbose up local --namespace ""
 ```
 
 ## Testing
@@ -90,6 +90,23 @@ OPERATOR_NAME='egressip-ipam-operator' operator-sdk --verbose up local --namespa
 ```shell
 oc apply -f test/egressIPAM-baremetal.yaml
 oc apply -f test/namespace-baremetal.yaml
+```
+
+### AWS test
+
+based on the output of the below command, configure your egressIPAM for AWS.
+
+```shell
+for vmidurl in $(oc get nodes -l node-role.kubernetes.io/worker="" -o json | jq -r .items[].spec.providerID); do
+  vmid=${vmidurl##*/}
+  subnetid=$(aws ec2 --region eu-central-1 describe-instances --instance-ids ${vmid} | jq -r .Reservations[0].Instances[0].NetworkInterfaces[0].SubnetId)
+  echo $(aws ec2 --region eu-central-1 describe-subnets --subnet-ids ${subnetid} | jq -r '.Subnets[0] | .CidrBlock + " " + .AvailabilityZone')
+done
+```  
+
+```shell
+oc apply -f test/egressIPAM-AWS.yaml
+oc apply -f test/namespace-AWS.yaml
 ```
 
 ## Release Process
