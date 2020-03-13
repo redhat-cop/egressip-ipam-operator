@@ -340,19 +340,19 @@ func (r *ReconcileEgressIPAM) Reconcile(request reconcile.Request) (reconcile.Re
 			log.Error(err, "unable to get assigned IPs by nodes ", "instance", instance)
 			return r.ManageError(instance, err)
 		}
-		log.Info("debug", "initially assignedIPsByNode", assignedIPsByNode)
+
 		err = r.removeAWSUnusedIPs(client, nodeMap, assignedIPsByNode)
 		if err != nil {
 			log.Error(err, "unable to remove assigned AWS IPs")
 			return r.ManageError(instance, err)
 		}
-		log.Info("debug", "assignedNamespaces", assignedNamespaces)
+
 		assignedIPsByNode, err = r.assignIPsToNodes(assignedIPsByNode, assignedNamespaces, instance)
 		if err != nil {
 			log.Error(err, "unable to assign egress IPs to nodes")
 			return r.ManageError(instance, err)
 		}
-		log.Info("debug", "finally assignedIPsByNode", assignedIPsByNode)
+
 		err = r.reconcileAWSAssignedIPs(client, nodeMap, assignedIPsByNode)
 		if err != nil {
 			log.Error(err, "unable to assign egress IPs to aws machines")
