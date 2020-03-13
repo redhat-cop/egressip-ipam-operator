@@ -1,0 +1,14 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: egressipam-aws-test
+  annotations:
+    egressip-ipam-operator.redhat-cop.io/egressipam:  egressipam-aws
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: egressipam-aws-test-1
+  annotations:
+    egressip-ipam-operator.redhat-cop.io/egressipam:  egressipam-aws      

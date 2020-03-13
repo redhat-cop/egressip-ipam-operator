@@ -130,24 +130,52 @@ func (r *ReconcileEgressIPAM) getSelectedNodes(egressIPAM *redhatcopv1alpha1.Egr
 	return nodeList.Items, nil
 }
 
-func (r *ReconcileEgressIPAM) getAssignedIPsByNode(egressIPAM *redhatcopv1alpha1.EgressIPAM) (map[string][]net.IP, error) {
-	assignedIPsByNode := map[string][]net.IP{}
+func (r *ReconcileEgressIPAM) getAssignedIPsByNode(egressIPAM *redhatcopv1alpha1.EgressIPAM) (map[string]corev1.Node, map[string][]string, error) {
+	assignedIPsByNode := map[string][]string{}
+	nodeMap := map[string]corev1.Node{}
 	nodes, err := r.getSelectedNodes(egressIPAM)
 	if err != nil {
 		log.Error(err, "unable to get selected nodes for ", "egressIPAM", egressIPAM)
-		return map[string][]net.IP{}, err
+		return map[string]corev1.Node{}, map[string][]string{}, err
 	}
 	for _, node := range nodes {
 		hostsubnet, err := r.getHostSubnet(node.GetName())
 		if err != nil {
 			log.Error(err, "unable to get hostsubnet for ", "node", node)
-			return map[string][]net.IP{}, err
+			return map[string]corev1.Node{}, map[string][]string{}, err
 		}
-		IPs := []net.IP{}
-		for _, ipstr := range hostsubnet.EgressIPs {
-			IPs = append(IPs, net.ParseIP(ipstr))
-		}
-		assignedIPsByNode[node.GetName()] = IPs
+		assignedIPsByNode[node.GetName()] = hostsubnet.EgressIPs
+		nodeMap[node.GetName()] = node
 	}
-	return assignedIPsByNode, nil
+	return nodeMap, assignedIPsByNode, nil
+}
+
+func (r *ReconcileEgressIPAM) getNodesIPsByCIDR(egressIPAM *redhatcopv1alpha1.EgressIPAM) (map[string][]net.IP, error) {
+	nodesIPsByCIDR := map[string][]net.IP{}
+	nodes := &corev1.NodeList{}
+	err := r.GetClient().List(context.TODO(), nodes, &client.ListOptions{})
+	if err != nil {
+		log.Error(err, "unable to list all nodes")
+		return map[string][]net.IP{}, err
+	}
+	for _, node := range nodes.Items {
+		for _, CIDRassigments := range egressIPAM.Spec.CIDRAssignments {
+			_, cidr, err := net.ParseCIDR(CIDRassigments.CIDR)
+			if err != nil {
+				log.Error(err, "unable to parse ", "cidr", cidr)
+				return map[string][]net.IP{}, err
+			}
+			var ipstr string
+			for _, address := range node.Status.Addresses {
+				if address.Type == corev1.NodeInternalIP {
+					ipstr = address.Address
+				}
+			}
+			ip := net.ParseIP(ipstr)
+			if cidr.Contains(ip) {
+				nodesIPsByCIDR[CIDRassigments.CIDR] = append(nodesIPsByCIDR[CIDRassigments.CIDR], ip)
+			}
+		}
+	}
+	return nodesIPsByCIDR, nil
 }

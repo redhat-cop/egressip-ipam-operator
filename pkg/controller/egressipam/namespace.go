@@ -83,9 +83,9 @@ func (r *ReconcileEgressIPAM) getReferringNamespaces(egressIPAM *redhatcopv1alph
 // returns a map if CIDRs and array of IPs CIDR are from the egressIPAM, IPs are currently assigned IPs.
 // IPs in an array are supposed to belong the the CIDR, but no check is currently in place to ensure it.
 // it expects that each namespace passed as parametr has exaclty the n IPs assigned where n is the number of CIDRs in egressIPAM
-func sortIPsByCIDR(assignedNamespaces []corev1.Namespace, egressIPAM *redhatcopv1alpha1.EgressIPAM) (map[*net.IPNet][]net.IP, error) {
+func sortIPsByCIDR(assignedNamespaces []corev1.Namespace, egressIPAM *redhatcopv1alpha1.EgressIPAM) (map[string][]net.IP, error) {
 	IPsMatrix := [][]net.IP{}
-	IPsByCIDR := map[*net.IPNet][]net.IP{}
+	IPsByCIDR := map[string][]net.IP{}
 	for range egressIPAM.Spec.CIDRAssignments {
 		IPsMatrix = append(IPsMatrix, []net.IP{})
 	}
@@ -102,9 +102,9 @@ func sortIPsByCIDR(assignedNamespaces []corev1.Namespace, egressIPAM *redhatcopv
 		_, network, err := net.ParseCIDR(cidrAssignment.CIDR)
 		if err != nil {
 			log.Error(err, "unable to parse ", "cidr", cidrAssignment.CIDR)
-			return map[*net.IPNet][]net.IP{}, err
+			return map[string][]net.IP{}, err
 		}
-		IPsByCIDR[network] = IPsMatrix[i]
+		IPsByCIDR[network.String()] = IPsMatrix[i]
 	}
 	return IPsByCIDR, nil
 }

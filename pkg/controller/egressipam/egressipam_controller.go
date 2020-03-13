@@ -85,20 +85,20 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		TypeMeta: metav1.TypeMeta{
 			Kind: "EgressIPAM",
 		},
-	}}, &handler.EnqueueRequestForObject{})
+	}}, &handler.EnqueueRequestForObject{}, util.ResourceGenerationOrFinalizerChangedPredicate{})
 	if err != nil {
 		return err
 	}
 
 	IsCreatedOrIsAnnotationChanged := predicate.Funcs{
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			return reflect.DeepEqual(e.MetaOld.GetAnnotations(), e.MetaNew.GetAnnotations())
+			return false
 		},
 		CreateFunc: func(e event.CreateEvent) bool {
 			return true
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
-			return false
+			return true
 		},
 		GenericFunc: func(e event.GenericEvent) bool {
 			return false
@@ -129,7 +129,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 				log.Info("unable to convert event object to hostsubnet,", "event", e)
 				return false
 			}
-			return reflect.DeepEqual(oldHostSubnet.EgressCIDRs, newHostSubnet.EgressCIDRs)
+			return !reflect.DeepEqual(oldHostSubnet.EgressCIDRs, newHostSubnet.EgressCIDRs) || !reflect.DeepEqual(oldHostSubnet.EgressIPs, newHostSubnet.EgressIPs)
 		},
 		CreateFunc: func(e event.CreateEvent) bool {
 			return true
@@ -165,7 +165,8 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 			return ok
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
-			return false
+			_, ok := e.Meta.GetAnnotations()[namespaceAnnotation]
+			return ok
 		},
 		GenericFunc: func(e event.GenericEvent) bool {
 			return false
@@ -196,7 +197,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 				log.Info("unable to convert event object to NetNamespace,", "event", e)
 				return false
 			}
-			return reflect.DeepEqual(oldNetNamespace.EgressIPs, newNetNamespace.EgressIPs)
+			return !reflect.DeepEqual(oldNetNamespace.EgressIPs, newNetNamespace.EgressIPs)
 		},
 		CreateFunc: func(e event.CreateEvent) bool {
 			return true
@@ -324,32 +325,35 @@ func (r *ReconcileEgressIPAM) Reconcile(request reconcile.Request) (reconcile.Re
 	// 7. reconcile assigned IP to nodes with correcponing hostsubnet
 
 	if infrastrcuture.Status.Platform == ocpconfigv1.AWSPlatformType {
-		_, _, err := r.getAWSCredentials()
+		id, key, err := r.getAWSCredentials()
 		if err != nil {
 			log.Error(err, "unable to retrieve aws credentials")
 			return r.ManageError(instance, err)
 		}
-		assignedIPsByNode, err := r.getAssignedIPsByNode(instance)
+		client, err := getAWSClient(id, key, infrastrcuture)
+		if err != nil {
+			log.Error(err, "unable to get initialize AWS client")
+			return r.ManageError(instance, err)
+		}
+		nodeMap, assignedIPsByNode, err := r.getAssignedIPsByNode(instance)
 		if err != nil {
 			log.Error(err, "unable to get assigned IPs by nodes ", "instance", instance)
 			return r.ManageError(instance, err)
 		}
-		awsAssignedIPsByNode, err := r.getAWSAssignedIPsByNode(instance)
-		if err != nil {
-			log.Error(err, "unable to get assigned AWS secondary IPs")
-			return r.ManageError(instance, err)
-		}
-		err = r.removeAWSUnusedIPs(awsAssignedIPsByNode, assignedIPsByNode)
+
+		err = r.removeAWSUnusedIPs(client, nodeMap, assignedIPsByNode)
 		if err != nil {
 			log.Error(err, "unable to remove assigned AWS IPs")
 			return r.ManageError(instance, err)
 		}
+
 		assignedIPsByNode, err = r.assignIPsToNodes(assignedIPsByNode, assignedNamespaces, instance)
 		if err != nil {
 			log.Error(err, "unable to assign egress IPs to nodes")
 			return r.ManageError(instance, err)
 		}
-		err = r.reconcileAWSAssignedIPs(assignedIPsByNode, instance)
+
+		err = r.reconcileAWSAssignedIPs(client, nodeMap, assignedIPsByNode)
 		if err != nil {
 			log.Error(err, "unable to assign egress IPs to aws machines")
 			return r.ManageError(instance, err)
