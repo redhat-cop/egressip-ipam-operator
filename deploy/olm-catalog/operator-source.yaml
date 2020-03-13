@@ -1,0 +1,11 @@
+apiVersion: operators.coreos.com/v1
+kind: OperatorSource
+metadata:
+  name: egressip-ipam-operator-package
+  namespace: openshift-marketplace
+spec:
+  type: appregistry
+  endpoint: https://quay.io/cnr
+  registryNamespace: $quay_test_repo
+  displayName: "egressip-ipam-operator"
+  publisher: "CoP"

@@ -22,11 +22,26 @@ spec:
 
 This EgressIPAM specifies that all nodes that comply with the specified node selector and that also have labels `egressGateway: "true"` will be assigned egressIP from the specified CIDR.
 
-Note that the `cidrAssigment` field is an array and therefore, multiple groups of nodes ca be identified with the labelValue and different CIDRs can be assigned to them. This is usually not necessary on a bare metal deployment.
+Note that the `cidrAssigment` field is an array and therefore, multiple groups of nodes can be identified with the labelValue and different CIDRs can be assigned to them. This is usually not necessary on a bare metal deployment.
 
-When this egressCRD is created all the `hostsubnet` relative to the nodes selected by this EgressIPAM will be update to have the EgressCIDRs field equal to the specified CIDR.
+In the bare metal scenario, when this egressCRD is created, all the `hostsubnet` relative to the nodes selected by this EgressIPAM will be update to have the EgressCIDRs field equal to the specified CIDR (see below for cloud provider scenarios).
 
-When a namespace is created with the opt-in annotation, a free egressIP is selected from the CIDR and assigned to the namespace.The `netnamespace` associated with this namespace is update to use that egressIP.
+When a namespace is created with the opt-in annotation: `egressip-ipam-operator.redhat-cop.io/egressipam=<egressIPAM>`, an available egressIP is selected from the CIDR and assigned to the namespace.The `netnamespace` associated with this namespace is updated to use that egressIP.
+
+## Passing EgressIPs as input
+
+The normal mode of operatio of this operator is to pick a random IP from the configured CIDR. However it also support a scenario where egressIP are pciked by an exteanl process and passed as input.
+
+In this case IPs must me passed as an annotation to the namespace, like this: `egressip-ipam-operator.redhat-cop.io/egressips=IP1,IP2...`. The value of the annotation is a comma separated array of ip with no spaces.
+
+There must be exactly one IP per CIDR defined in the referenced egressIPAM. Moreover each IP must belong to the corresponding CIDR. It also also a responsibility of the progress picking the IPs to ensure that those IPs are actually available.
+
+## Assumptions
+
+The following assumptions apply when using this operator:
+
+1. if multiple egressIPAM are defined, their selected nodes MUST NOT overlap
+2. when using cloud provider the topological label MUST be `topology.kubernetes.io/zone`
 
 ## Support for AWS
 
@@ -36,16 +51,19 @@ In AWS as well as other cloud providers, one cannot freely assign IPs to machine
 apiVersion: redhatcop.redhat.io/v1alpha1
 kind: EgressIPAM
 metadata:
-  name: example-egressipam
+  name: egressipam-aws
 spec:
   cidrAssignment:
-    - labelValue: us-east-1
-      CIDR: 192.169.0.0/24
-    - labelValue: us-east-2
-      CIDR: 192.170.0.0/24
+    - labelValue: "eu-central-1a"
+      CIDR: 10.0.128.0/20
+    - labelValue: "eu-central-1b"
+      CIDR: 10.0.144.0/20
+    - labelValue: "eu-central-1c"
+      CIDR: 10.0.160.0/20
   nodeLabel: topology.kubernetes.io/zone
   nodeSelector:
-    node-role.kubernetes.io/worker: ""
+    matchLabels:
+      node-role.kubernetes.io/worker: ""
 ```
 
 When a namespace with the opt-in annotation is created, the following happens:
@@ -55,6 +73,40 @@ When a namespace with the opt-in annotation is created, the following happens:
 3. one node per zone is selected to carry the egressIP
 4. the relative aws machines are assigned the additional IP on the main interface (support for secondary interfaces in not available)
 5. the relative `hostsubnets` are updated to reflect the assigned IP, the `egressIP` field is updated.
+
+## Deploying the Operator
+
+This is a cluster-level operator that you can deploy in any namespace, `egressip-ipam-operator` is recommended.
+
+You can either deploy it using [`Helm`](https://helm.sh/) or creating the manifests directly.
+
+### Deploying with Helm
+
+Here are the instructions to install the latest release with Helm.
+
+```shell
+oc new-project egressip-ipam-operator
+
+helm repo add egressip-ipam-operator https://redhat-cop.github.io/egressip-ipam-operator
+helm repo update
+export egressip_ipam_operator_chart_version=$(helm search repo egressip-ipam-operator/egressip-ipam-operator | grep egressip-ipam-operator/egressip-ipam-operator | awk '{print $2}')
+
+helm fetch egressip-ipam-operator/egressip-ipam-operator --version ${egressip_ipam_operator_chart_version}
+helm template egressip-ipam-operator-${egressip_ipam_operator_chart_version}.tgz --namespace egressip-ipam-operator | oc apply -f - -n egressip-ipam-operator
+
+rm egressip-ipam-operator-${egressip_ipam_operator_chart_version}.tgz
+```
+
+### Deploying directly with manifests
+
+Here are the instructions to install the latest release creating the manifest directly in OCP.
+
+```shell
+git clone git@github.com:redhat-cop/egressip-ipam-operator.git; cd egressip-ipam-operator
+oc apply -f deploy/crds/redhatcop.redhat.io_egressipams_crd.yaml
+oc new-project egressip-ipam-operator
+oc -n egressip-ipam-operator apply -f deploy
+```
 
 ## Local Development
 

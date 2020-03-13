@@ -3,7 +3,6 @@ kind: EgressIPAM
 metadata:
   name: egressipam-aws
 spec:
-  # Add fields here
   cidrAssignment:
     - labelValue: "eu-central-1a"
       CIDR: 10.0.128.0/20
