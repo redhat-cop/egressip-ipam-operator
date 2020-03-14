@@ -1,7 +1,7 @@
 apiVersion: redhatcop.redhat.io/v1alpha1
 kind: EgressIPAM
 metadata:
-  name: example-egressipam
+  name: egressipam-baremetal
 spec:
   # Add fields here
   cidrAssignment:

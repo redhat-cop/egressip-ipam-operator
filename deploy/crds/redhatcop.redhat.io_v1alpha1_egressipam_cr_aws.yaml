@@ -1,16 +1,18 @@
 apiVersion: redhatcop.redhat.io/v1alpha1
 kind: EgressIPAM
 metadata:
-  name: example-egressipam
+  name: egressipam-aws
 spec:
-  # Add fields here
   cidrAssignment:
-    - labelValue: us-east-1
-      CIDR: 192.169.0.0/24
-    - labelValue: us-east-2
-      CIDR: 192.170.0.0/24
+    - labelValue: "eu-central-1a"
+      CIDR: 10.0.128.0/20
+    - labelValue: "eu-central-1b"
+      CIDR: 10.0.144.0/20
+    - labelValue: "eu-central-1c"
+      CIDR: 10.0.160.0/20            
   nodeLabel: topology.kubernetes.io/zone
   nodeSelector:
-    node-role.kubernetes.io/worker: ""
+    matchLabels:
+      node-role.kubernetes.io/worker: ""
     
 

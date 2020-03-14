@@ -141,7 +141,6 @@ func (r *ReconcileEgressIPAM) createAWSCredentialRequest() error {
 				Resource: "*",
 				// "Key": "kubernetes.io/cluster/cluster-b92f-78s8h",
 				// "Value": "owned"
-
 			},
 		},
 	}
