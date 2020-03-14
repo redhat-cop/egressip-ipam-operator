@@ -1,5 +1,7 @@
 # EgressIP IPAM Operator
 
+[![Build Status](https://travis-ci.org/redhat-cop/egressip-ipam-operator.svg?branch=master)](https://travis-ci.org/redhat-cop/egressip-ipam-operator) [![Docker Repository on Quay](https://quay.io/repository/redhat-cop/egressip-ipam-operator/status "Docker Repository on Quay")](https://quay.io/repository/redhat-cop/egressip-ipam-operator)
+
 This operator automates the assignment of egressIPs to namespaces.
 Namespaces can opt in to receiving one or more egressIPs with the following annotation `egressip-ipam-operator.redhat-cop.io/egressipam:<egressIPAM>`, where `egressIPAM` is the CRD that controls how egressIPs are assigned.
 IPs assigned to the namespace can be looked up in the following annotation: `egressip-ipam-operator.redhat-cop.io/egressips`.
