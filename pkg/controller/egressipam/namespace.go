@@ -108,3 +108,20 @@ func sortIPsByCIDR(assignedNamespaces []corev1.Namespace, egressIPAM *redhatcopv
 	}
 	return IPsByCIDR, nil
 }
+
+func (r *ReconcileEgressIPAM) removeNamespaceAssignedIPs(egressIPAM *redhatcopv1alpha1.EgressIPAM) error {
+	_, assignedNamespaces, err := r.getReferringNamespaces(egressIPAM)
+	if err != nil {
+		log.Error(err, "unable to retrieve refrerring namespaces for ", "egressIPAM", egressIPAM)
+		return err
+	}
+	for _, namespace := range assignedNamespaces {
+		delete(namespace.GetAnnotations(), namespaceAssociationAnnotation)
+		err := r.GetClient().Update(context.TODO(), &namespace, &client.UpdateOptions{})
+		if err != nil {
+			log.Error(err, "unable to update ", "namespace", namespace)
+			return err
+		}
+	}
+	return nil
+}

@@ -1,7 +1,6 @@
 package egressipam
 
 import (
-	"context"
 	"errors"
 	"strings"
 
@@ -9,20 +8,27 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
-	ocpconfigv1 "github.com/openshift/api/config/v1"
 	cloudcredentialv1 "github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1"
+	redhatcopv1alpha1 "github.com/redhat-cop/egressip-ipam-operator/pkg/apis/redhatcop/v1alpha1"
 	"github.com/scylladb/go-set/strset"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 )
 
-const aWSCredentialsSecretName = "egress-ipam-operator-cloud-credentials"
-
-func getAWSClient(id string, key string, infra *ocpconfigv1.Infrastructure) (*ec2.EC2, error) {
+func (r *ReconcileEgressIPAM) getAWSClient() (*ec2.EC2, error) {
+	infrastructure, err := r.getInfrastructure()
+	if err != nil {
+		log.Error(err, "unable to get infrastructure")
+		return nil, err
+	}
+	id, key, err := r.getAWSCredentials()
+	if err != nil {
+		log.Error(err, "unable to get aws credentials")
+		return nil, err
+	}
 	mySession := session.Must(session.NewSession())
-	client := ec2.New(mySession, aws.NewConfig().WithCredentials(credentials.NewStaticCredentials(id, key, "")).WithRegion(infra.Status.PlatformStatus.AWS.Region))
+	client := ec2.New(mySession, aws.NewConfig().WithCredentials(credentials.NewStaticCredentials(id, key, "")).WithRegion(infrastructure.Status.PlatformStatus.AWS.Region))
 	return client, nil
 }
 
@@ -155,7 +161,7 @@ func (r *ReconcileEgressIPAM) createAWSCredentialRequest() error {
 		},
 		Spec: cloudcredentialv1.CredentialsRequestSpec{
 			SecretRef: corev1.ObjectReference{
-				Name:      aWSCredentialsSecretName,
+				Name:      credentialsSecretName,
 				Namespace: namespace,
 			},
 			ProviderSpec: &runtime.RawExtension{
@@ -174,21 +180,9 @@ func (r *ReconcileEgressIPAM) createAWSCredentialRequest() error {
 }
 
 func (r *ReconcileEgressIPAM) getAWSCredentials() (id string, key string, err error) {
-	namespace, err := getOperatorNamespace()
+	awsCredentialSecret, err := r.getCredentialSecret()
 	if err != nil {
-		log.Error(err, "unable to get operator's namespace")
-		return "", "", err
-	}
-	awsCredentialSecret := &corev1.Secret{}
-	err = r.GetClient().Get(context.TODO(), types.NamespacedName{
-		Name:      aWSCredentialsSecretName,
-		Namespace: namespace,
-	}, awsCredentialSecret)
-	if err != nil {
-		log.Error(err, "unable to retrive aws credential ", "secret", types.NamespacedName{
-			Name:      aWSCredentialsSecretName,
-			Namespace: namespace,
-		})
+		log.Error(err, "unable to get credential secret")
 		return "", "", err
 	}
 
@@ -210,4 +204,32 @@ func (r *ReconcileEgressIPAM) getAWSCredentials() (id string, key string, err er
 	}
 
 	return string(awsAccessKeyID), string(awsSecretAccessKey), nil
+}
+
+func (r *ReconcileEgressIPAM) removeAWSAssignedIPs(egressIPAM *redhatcopv1alpha1.EgressIPAM) error {
+	nodes, err := r.getSelectedNodes(egressIPAM)
+	if err != nil {
+		log.Error(err, "unable to get nodes selected by", "egressIPAM", egressIPAM)
+		return err
+	}
+	client, err := r.getAWSClient()
+	for _, node := range nodes {
+		instance, err := getAWSInstance(client, node)
+		if err != nil {
+			log.Error(err, "unable to get AWS instance from", "node", node.GetName())
+			return err
+		}
+		for _, secondaryIP := range instance.NetworkInterfaces[0].PrivateIpAddresses[1:] {
+			input := &ec2.UnassignPrivateIpAddressesInput{
+				NetworkInterfaceId: instance.NetworkInterfaces[0].NetworkInterfaceId,
+				PrivateIpAddresses: []*string{secondaryIP.PrivateIpAddress},
+			}
+			_, err = client.UnassignPrivateIpAddresses(input)
+			if err != nil {
+				log.Error(err, "unable to remove IPs from ", "instance", instance.InstanceId)
+				return err
+			}
+		}
+	}
+	return err
 }

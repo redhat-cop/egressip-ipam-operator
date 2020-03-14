@@ -3,6 +3,7 @@ package egressipam
 import (
 	"context"
 	errs "errors"
+	"net"
 	"os"
 	"reflect"
 
@@ -15,7 +16,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -28,6 +28,10 @@ import (
 )
 
 const controllerName = "egressipam-controller"
+
+// name of the secret with the credential (cloud independent)
+const credentialsSecretName = "egress-ipam-operator-cloud-credentials"
+
 const namespaceAnnotation = "egressip-ipam-operator.redhat-cop.io/egressipam"
 
 // this is a comma-separated list of assigned ip address. There should be an IP from each of the CIDRs in the egressipam
@@ -60,7 +64,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		log.Info("unable to convert to ReconcileEgressIPAM from ", "reconciler", r)
 	}
 
-	infrastructure, err := getInfrastructure(mgr.GetConfig())
+	infrastructure, err := reconcileEgressIPAM.getInfrastructure()
 	if err != nil {
 		log.Error(err, "Unable to retrieve current cluster infrastructure")
 		return err
@@ -233,6 +237,8 @@ type ReconcileEgressIPAM struct {
 	// This client, initialized using mgr.Client() above, is a split client
 	// that reads objects from the cache and writes to the apiserver
 	util.ReconcilerBase
+	infrastructure ocpconfigv1.Infrastructure
+	creds          corev1.Secret
 }
 
 // Reconcile reads that state of the cluster for a EgressIPAM object and makes changes based on the state read
@@ -258,6 +264,37 @@ func (r *ReconcileEgressIPAM) Reconcile(request reconcile.Request) (reconcile.Re
 		}
 		// Error reading the object - requeue the request.
 		return reconcile.Result{}, err
+	}
+
+	if ok, err := r.IsValid(instance); !ok {
+		return r.ManageError(instance, err)
+	}
+
+	if ok := r.IsInitialized(instance); !ok {
+		err := r.GetClient().Update(context.TODO(), instance)
+		if err != nil {
+			log.Error(err, "unable to update instance", "instance", instance)
+			return r.ManageError(instance, err)
+		}
+		return reconcile.Result{}, nil
+	}
+
+	if util.IsBeingDeleted(instance) {
+		if !util.HasFinalizer(instance, controllerName) {
+			return reconcile.Result{}, nil
+		}
+		err := r.manageCleanUpLogic(instance)
+		if err != nil {
+			log.Error(err, "unable to delete instance", "instance", instance)
+			return r.ManageError(instance, err)
+		}
+		util.RemoveFinalizer(instance, controllerName)
+		err = r.GetClient().Update(context.TODO(), instance)
+		if err != nil {
+			log.Error(err, "unable to update instance", "instance", instance)
+			return r.ManageError(instance, err)
+		}
+		return reconcile.Result{}, nil
 	}
 
 	// high-level common desing for all platforms:
@@ -289,7 +326,7 @@ func (r *ReconcileEgressIPAM) Reconcile(request reconcile.Request) (reconcile.Re
 		return r.ManageError(instance, err)
 	}
 
-	infrastrcuture, err := getInfrastructure(r.GetRestConfig())
+	infrastrcuture, err := r.getInfrastructure()
 	if err != nil {
 		log.Error(err, "unable to retrieve cluster infrastrcuture information")
 		return r.ManageError(instance, err)
@@ -325,12 +362,7 @@ func (r *ReconcileEgressIPAM) Reconcile(request reconcile.Request) (reconcile.Re
 	// 7. reconcile assigned IP to nodes with correcponing hostsubnet
 
 	if infrastrcuture.Status.Platform == ocpconfigv1.AWSPlatformType {
-		id, key, err := r.getAWSCredentials()
-		if err != nil {
-			log.Error(err, "unable to retrieve aws credentials")
-			return r.ManageError(instance, err)
-		}
-		client, err := getAWSClient(id, key, infrastrcuture)
+		client, err := r.getAWSClient()
 		if err != nil {
 			log.Error(err, "unable to get initialize AWS client")
 			return r.ManageError(instance, err)
@@ -368,11 +400,14 @@ func (r *ReconcileEgressIPAM) Reconcile(request reconcile.Request) (reconcile.Re
 	return r.ManageSuccess(instance)
 }
 
-func getInfrastructure(cfg *rest.Config) (*ocpconfigv1.Infrastructure, error) {
+func (r *ReconcileEgressIPAM) getInfrastructure() (*ocpconfigv1.Infrastructure, error) {
+	if !reflect.DeepEqual(r.infrastructure, ocpconfigv1.Infrastructure{}) {
+		return &r.infrastructure, nil
+	}
 	infrastructure := &ocpconfigv1.Infrastructure{}
-	client, err := client.New(cfg, client.Options{})
+	client, err := client.New(r.GetRestConfig(), client.Options{})
 	if err != nil {
-		log.Error(err, "unable to create client from ", "config", cfg)
+		log.Error(err, "unable to create client from ", "config", r.GetRestConfig())
 		return &ocpconfigv1.Infrastructure{}, err
 	}
 	err = client.Get(context.TODO(), types.NamespacedName{
@@ -382,7 +417,33 @@ func getInfrastructure(cfg *rest.Config) (*ocpconfigv1.Infrastructure, error) {
 		log.Error(err, "unable to retrieve cluster's infrastrcuture resource ")
 		return &ocpconfigv1.Infrastructure{}, err
 	}
-	return infrastructure, nil
+	r.infrastructure = *infrastructure
+	return &r.infrastructure, nil
+}
+
+func (r *ReconcileEgressIPAM) getCredentialSecret() (*corev1.Secret, error) {
+	if !reflect.DeepEqual(r.creds, corev1.Secret{}) {
+		return &r.creds, nil
+	}
+	namespace, err := getOperatorNamespace()
+	if err != nil {
+		log.Error(err, "unable to get operator's namespace")
+		return &corev1.Secret{}, err
+	}
+	credentialSecret := &corev1.Secret{}
+	err = r.GetClient().Get(context.TODO(), types.NamespacedName{
+		Name:      credentialsSecretName,
+		Namespace: namespace,
+	}, credentialSecret)
+	if err != nil {
+		log.Error(err, "unable to retrive aws credential ", "secret", types.NamespacedName{
+			Name:      credentialsSecretName,
+			Namespace: namespace,
+		})
+		return &corev1.Secret{}, err
+	}
+	r.creds = *credentialSecret
+	return &r.creds, nil
 }
 
 func getOperatorNamespace() (string, error) {
@@ -395,4 +456,64 @@ func getOperatorNamespace() (string, error) {
 		return namespace, nil
 	}
 	return namespace, nil
+}
+
+func (r *ReconcileEgressIPAM) IsValid(obj metav1.Object) (bool, error) {
+	ergessIPAM, ok := obj.(*redhatcopv1alpha1.EgressIPAM)
+	if !ok {
+		return false, errs.New("unable to conver to egressIPAM")
+	}
+	for _, CIDRAssignemnt := range ergessIPAM.Spec.CIDRAssignments {
+		_, _, err := net.ParseCIDR(CIDRAssignemnt.CIDR)
+		if err != nil {
+			log.Error(err, "unable to conver to", "cidr", CIDRAssignemnt.CIDR)
+			return false, err
+		}
+	}
+	return true, nil
+}
+
+func (r *ReconcileEgressIPAM) IsInitialized(obj metav1.Object) bool {
+	isInitialized := true
+	ergessIPAM, ok := obj.(*redhatcopv1alpha1.EgressIPAM)
+	if !ok {
+		log.Error(errs.New("unable to conver to egressIPAM"), "unable to conver to egressIPAM")
+		return false
+	}
+	if !util.HasFinalizer(ergessIPAM, controllerName) {
+		util.AddFinalizer(ergessIPAM, controllerName)
+		isInitialized = false
+	}
+	return isInitialized
+}
+
+func (r *ReconcileEgressIPAM) manageCleanUpLogic(egressIPAM *redhatcopv1alpha1.EgressIPAM) error {
+	// remove assigned IPs from namespaces
+	err := r.removeNamespaceAssignedIPs(egressIPAM)
+	if err != nil {
+		log.Error(err, "unable to remove IPs assigned to namespaces referring to ", "egressIPAM", egressIPAM)
+		return err
+	}
+
+	// remove all assigned IPs/CIDRs from hostsubnets
+	err = r.removeHostsubnetAssignedIPsCIDRsAssigned(egressIPAM)
+	if err != nil {
+		log.Error(err, "unable to remove IPs/CIDRs assigned to hostsubnets selected by ", "egressIPAM", egressIPAM)
+		return err
+	}
+
+	// if aws remove all secondary assigned IPs from AWS instances
+	infrastrcuture, err := r.getInfrastructure()
+	if err != nil {
+		log.Error(err, "unable to retrieve cluster infrastrcuture information")
+		return err
+	}
+	if infrastrcuture.Status.Platform == ocpconfigv1.AWSPlatformType {
+		err = r.removeAWSAssignedIPs(egressIPAM)
+		if err != nil {
+			log.Error(err, "unable to remove aws assigned IPs")
+			return err
+		}
+	}
+	return nil
 }
