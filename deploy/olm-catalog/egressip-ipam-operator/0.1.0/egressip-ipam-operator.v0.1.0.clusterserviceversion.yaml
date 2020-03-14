@@ -94,7 +94,7 @@ spec:
 
     This EgressIPAM specifies that all nodes that comply with the specified node selector and that also have labels `egressGateway: "true"` will be assigned egressIP from the specified CIDR.
 
-    Note that the `cidrAssigment` field is an array and therefore, multiple groups of nodes can be identified with the labelValue and different CIDRs can be assigned to them. This is usually not necessary on a bare metal deployment.
+    Note that the `cidrAssigments` field is an array and therefore, multiple groups of nodes can be identified with the labelValue and different CIDRs can be assigned to them. This is usually not necessary on a bare metal deployment.
 
     In the bare metal scenario, when this egressCRD is created, all the `hostsubnet` relative to the nodes selected by this EgressIPAM will be update to have the EgressCIDRs field equal to the specified CIDR (see below for cloud provider scenarios).
 
@@ -102,7 +102,7 @@ spec:
 
     ## Passing EgressIPs as input
 
-    The normal mode of operatio of this operator is to pick a random IP from the configured CIDR. However it also support a scenario where egressIP are pciked by an exteanl process and passed as input.
+    The normal mode of operatios of this operator is to pick a random IP from the configured CIDR. However it also support a scenario where egressIP are picked by an external process and passed as input.
 
     In this case IPs must me passed as an annotation to the namespace, like this: `egressip-ipam-operator.redhat-cop.io/egressips=IP1,IP2...`. The value of the annotation is a comma separated array of ip with no spaces.
 
@@ -112,8 +112,8 @@ spec:
 
     The following assumptions apply when using this operator:
 
-    1. if multiple egressIPAM are defined, their selected nodes MUST NOT overlap
-    2. when using cloud provider the topological label MUST be `topology.kubernetes.io/zone`
+    1. If multiple EgressIPAMs are defined, their selected nodes MUST NOT overlap.
+    2. When using a cloud provider the topology label MUST be `topology.kubernetes.io/zone`.
 
     ## Support for AWS
 
