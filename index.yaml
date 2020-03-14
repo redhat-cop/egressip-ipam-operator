@@ -1,0 +1,20 @@
+apiVersion: v1
+entries:
+  egressip-ipam-operator:
+  - apiVersion: v1
+    appVersion: v0.1.0
+    created: "2020-03-14T14:04:45.177566649Z"
+    description: Helm chart that deploys egressip-ipam-operator
+    digest: 8af64fa0dec06c6f85e38247f4ded8058c782d076dd87e54704e183f674f6d5e
+    engine: gotpl
+    keywords:
+    - egressip
+    - ipam
+    - networking
+    name: egressip-ipam-operator
+    sources:
+    - https://github.com/redhat-cop/egressip-ipam-operator
+    urls:
+    - https://redhat-cop.github.io/egressip-ipam-operator/egressip-ipam-operator/egressip-ipam-operator-v0.1.0.tgz
+    version: v0.1.0
+generated: "2020-03-14T14:04:45.176585761Z"
