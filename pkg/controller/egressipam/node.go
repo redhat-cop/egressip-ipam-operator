@@ -104,7 +104,7 @@ func (r *ReconcileEgressIPAM) getSelectedNodesByCIDR(egressIPAM *redhatcopv1alph
 		selectedNdesByCIDR[cidrAssignment.CIDR] = []corev1.Node{}
 	}
 	for _, node := range nodes {
-		if value, ok := node.GetLabels()[egressIPAM.Spec.NodeLabel]; ok {
+		if value, ok := node.GetLabels()[egressIPAM.Spec.TopologyLabel]; ok {
 			if cidr, ok := CIDRbyLabel[value]; ok {
 				selectedNdesByCIDR[cidr] = append(selectedNdesByCIDR[cidr], node)
 			}

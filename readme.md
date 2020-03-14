@@ -14,10 +14,10 @@ kind: EgressIPAM
 metadata:
   name: example-egressipam
 spec:
-  cidrAssignment:
+  cidrAssignments:
     - labelValue: "true"
       CIDR: 192.169.0.0/24
-  nodeLabel: egressGateway
+  topologyLabel: egressGateway
   nodeSelector:
     node-role.kubernetes.io/worker: ""
 ```
@@ -55,14 +55,14 @@ kind: EgressIPAM
 metadata:
   name: egressipam-aws
 spec:
-  cidrAssignment:
+  cidrAssignments:
     - labelValue: "eu-central-1a"
       CIDR: 10.0.128.0/20
     - labelValue: "eu-central-1b"
       CIDR: 10.0.144.0/20
     - labelValue: "eu-central-1c"
       CIDR: 10.0.160.0/20
-  nodeLabel: topology.kubernetes.io/zone
+  topologyLabel: topology.kubernetes.io/zone
   nodeSelector:
     matchLabels:
       node-role.kubernetes.io/worker: ""
