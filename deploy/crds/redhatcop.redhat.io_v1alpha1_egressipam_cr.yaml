@@ -4,10 +4,10 @@ metadata:
   name: egressipam-baremetal
 spec:
   # Add fields here
-  cidrAssignment:
+  cidrAssignments:
     - labelValue: "true"
       CIDR: 192.169.0.0/24
-  nodeLabel: egressGateway
+  topologyLabel: egressGateway
   nodeSelector:
     node-role.kubernetes.io/worker: ""
     

@@ -17,10 +17,10 @@ type EgressIPAMSpec struct {
 	// +kubebuilder:validation:Optional
 	// +listType=map
 	// +listMapKey=CIDR
-	CIDRAssignments []CIDRAssignment `json:"cidrAssignment,omitempty"`
+	CIDRAssignments []CIDRAssignment `json:"cidrAssignments,omitempty"`
 
 	// +kubebuilder:validation:Required
-	NodeLabel string `json:"nodeLabel"`
+	TopologyLabel string `json:"topologyLabel"`
 
 	// +kubebuilder:validation:Optional
 	NodeSelector metav1.LabelSelector `json:"nodeSelector,omitempty"`
