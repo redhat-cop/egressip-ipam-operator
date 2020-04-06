@@ -31,7 +31,7 @@ spec:
         spec:
           description: EgressIPAMSpec defines the desired state of EgressIPAM
           properties:
-            cidrAssignment:
+            cidrAssignments:
               items:
                 properties:
                   CIDR:
@@ -45,8 +45,6 @@ spec:
                 - labelValue
                 type: object
               type: array
-            nodeLabel:
-              type: string
             nodeSelector:
               description: A label selector is a label query over a set of resources.
                 The result of matchLabels and matchExpressions are ANDed. An empty
@@ -93,8 +91,10 @@ spec:
                     are ANDed.
                   type: object
               type: object
+            topologyLabel:
+              type: string
           required:
-          - nodeLabel
+          - topologyLabel
           type: object
         status:
           description: EgressIPAMStatus defines the observed state of EgressIPAM

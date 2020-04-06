@@ -43,7 +43,7 @@ There must be exactly one IP per CIDR defined in the referenced egressIPAM. More
 The following assumptions apply when using this operator:
 
 1. If multiple EgressIPAMs are defined, their selected nodes MUST NOT overlap.
-2. When using a cloud provider the topology label MUST be `topology.kubernetes.io/zone`.
+2. When using a cloud provider the topology label MUST be `failure-domain.beta.kubernetes.io/zone`.
 
 ## Support for AWS
 
@@ -62,7 +62,7 @@ spec:
       CIDR: 10.0.144.0/20
     - labelValue: "eu-central-1c"
       CIDR: 10.0.160.0/20
-  topologyLabel: topology.kubernetes.io/zone
+  topologyLabel: failure-domain.beta.kubernetes.io/zone
   nodeSelector:
     matchLabels:
       node-role.kubernetes.io/worker: ""
@@ -134,7 +134,7 @@ oc apply -f deploy/role.yaml -n egressip-ipam-operator
 oc apply -f deploy/role_binding.yaml -n egressip-ipam-operator
 export token=$(oc serviceaccounts get-token 'egressip-ipam-operator' -n egressip-ipam-operator)
 oc login --token=${token}
-OPERATOR_NAME='egressip-ipam-operator' NAMESPACE='egressip-ipam-operator' operator-sdk --verbose up local --namespace ""
+OPERATOR_NAME='egressip-ipam-operator' NAMESPACE='egressip-ipam-operator' operator-sdk --verbose up local --namespace "" --operator-flags="--zap-level=debug"
 ```
 
 ## Testing

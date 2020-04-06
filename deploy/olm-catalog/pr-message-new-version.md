@@ -1,4 +1,4 @@
-keepalived-operator new version
+egressip-ipam-operator new version
 
 ### New Submissions
 

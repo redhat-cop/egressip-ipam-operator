@@ -4,13 +4,13 @@ metadata:
   name: egressipam-aws
 spec:
   cidrAssignments:
-    - labelValue: "eu-central-1a"
+    - labelValue: "us-west-2a"
       CIDR: 10.0.128.0/20
-    - labelValue: "eu-central-1b"
+    - labelValue: "us-west-2b"
       CIDR: 10.0.144.0/20
-    - labelValue: "eu-central-1c"
+    - labelValue: "us-west-2c"
       CIDR: 10.0.160.0/20            
-  topologyLabel: topology.kubernetes.io/zone
+  topologyLabel: failure-domain.beta.kubernetes.io/zone
   nodeSelector:
     matchLabels:
       node-role.kubernetes.io/worker: ""
