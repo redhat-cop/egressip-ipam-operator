@@ -10,7 +10,7 @@ spec:
       CIDR: 10.0.144.0/20
     - labelValue: "eu-central-1c"
       CIDR: 10.0.160.0/20            
-  topologyLabel: topology.kubernetes.io/zone
+  topologyLabel: failure-domain.beta.kubernetes.io/zone
   nodeSelector:
     matchLabels:
       node-role.kubernetes.io/worker: ""

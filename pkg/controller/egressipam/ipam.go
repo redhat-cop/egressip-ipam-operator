@@ -23,6 +23,7 @@ func (r *ReconcileEgressIPAM) assignIPsToNamespaces(unassignedNamespaces []corev
 		log.Error(err, "unable to sort assignedIPs by CIDR")
 		return []corev1.Namespace{}, err
 	}
+	log.V(1).Info("currently assigned ", "IPs by CIDR", IPsByCIDR)
 	//in all cases we need to add the base network and the broadcast address
 	for cidr := range IPsByCIDR {
 		base, cidrt, err := net.ParseCIDR(cidr)
@@ -33,6 +34,8 @@ func (r *ReconcileEgressIPAM) assignIPsToNamespaces(unassignedNamespaces []corev
 		broadcastip := ipmath.FromUInt32((^binary.BigEndian.Uint32([]byte(cidrt.Mask))) | binary.BigEndian.Uint32([]byte(base.To4())))
 		IPsByCIDR[cidr] = append(IPsByCIDR[cidr], base, broadcastip)
 	}
+	log.V(1).Info("adding always excluded network IPs ", "IPs by CIDR", IPsByCIDR)
+
 	// if nodes' IPs are in the CIDR, they should count as assigned.
 	nodesIPsByCIDR, err := r.getNodesIPsByCIDR(egressIPAM)
 	if err != nil {
@@ -42,6 +45,8 @@ func (r *ReconcileEgressIPAM) assignIPsToNamespaces(unassignedNamespaces []corev
 	for cidr := range IPsByCIDR {
 		IPsByCIDR[cidr] = append(IPsByCIDR[cidr], nodesIPsByCIDR[cidr]...)
 	}
+	log.V(1).Info("adding nodes IPs (if in the same CIDR) ", "IPs by CIDR", IPsByCIDR)
+
 	// if in AWS we have some reserved addresses:
 	infrastructure, err := r.getInfrastructure()
 	if err != nil {
@@ -59,9 +64,12 @@ func (r *ReconcileEgressIPAM) assignIPsToNamespaces(unassignedNamespaces []corev
 			IPsByCIDR[cidr] = append(IPsByCIDR[cidr], ipmath.DeltaIP(base, 1), ipmath.DeltaIP(base, 2), ipmath.DeltaIP(base, 3))
 		}
 	}
+	log.V(1).Info("adding cloud infrastrcture reserved IPs ", "IPs by CIDR", IPsByCIDR)
+
 	for cidr := range IPsByCIDR {
 		IPsByCIDR[cidr] = sortIPs(IPsByCIDR[cidr])
 	}
+	log.V(1).Info("sorted reserved IPs ", "IPs by CIDR", IPsByCIDR)
 	for i := range unassignedNamespaces {
 		IPs, err := getNextAvailableIPs(IPsByCIDR)
 		if err != nil {
@@ -86,6 +94,7 @@ func (r *ReconcileEgressIPAM) assignIPsToNamespaces(unassignedNamespaces []corev
 // returns a set of IPs. These IPs are the next available IP per CIDR.
 // The map of CIDR is passed by reference and updated with the new IPs, so this function can be used in a loop.
 func getNextAvailableIPs(IPsByCIDR map[string][]net.IP) ([]net.IP, error) {
+	log.V(1).Info("Assigning new IPs from", "IPs by CIDR", IPsByCIDR)
 	iPsByCIDR := IPsByCIDR
 	assignedIPs := []net.IP{}
 	for cidr := range iPsByCIDR {
@@ -97,10 +106,12 @@ func getNextAvailableIPs(IPsByCIDR map[string][]net.IP) ([]net.IP, error) {
 		assignedIPs = append(assignedIPs, assignedIP)
 		iPsByCIDR[cidr] = newIPs
 	}
+	log.V(1).Info("Assigned", "new IPs from", assignedIPs, " new IPs by CIDR", IPsByCIDR)
 	return assignedIPs, nil
 }
 
 func getNextAvailableIP(cidrs string, assignedIPs []net.IP) (net.IP, []net.IP, error) {
+	log.V(1).Info("Assigning new IP from", "CIDR", cidrs, "with already assigned IPs", assignedIPs)
 	_, cidr, err := net.ParseCIDR(cidrs)
 	if err != nil {
 		log.Error(err, "unable to parse", "cidr", cidrs)
@@ -113,6 +124,7 @@ func getNextAvailableIP(cidrs string, assignedIPs []net.IP) (net.IP, []net.IP, e
 		if !assignedIPs[i].Equal(ipmath.DeltaIP(cidr.IP, i)) {
 			assignedIP := ipmath.DeltaIP(cidr.IP, i)
 			assignedIPs = append(assignedIPs[:i], append([]net.IP{assignedIP}, assignedIPs[i:]...)...)
+			log.V(1).Info("Assigned ", "IP", assignedIP, "new assigned IPs", assignedIPs)
 			return assignedIP, assignedIPs, nil
 		}
 	}
@@ -120,19 +132,21 @@ func getNextAvailableIP(cidrs string, assignedIPs []net.IP) (net.IP, []net.IP, e
 }
 
 func sortIPs(ips []net.IP) []net.IP {
-	ipstrs := []string{}
+	ipstrs := []uint32{}
 	for _, ip := range ips {
-		ipstrs = append(ipstrs, ip.String())
+		ipstrs = append(ipstrs, ipmath.ToUInt32(ip))
 	}
-	sort.Strings(ipstrs)
+	sort.Slice(ipstrs, func(i, j int) bool { return ipstrs[i] < ipstrs[j] })
 	ips = []net.IP{}
 	for _, ipstr := range ipstrs {
-		ips = append(ips, net.ParseIP(ipstr))
+		ips = append(ips, ipmath.FromUInt32(ipstr))
 	}
-	return ips
-	// sort.Slice(ips, func(i, j int) bool {
-	// 	return bytes.Compare(ips[i], ips[j]) < 0
+	// ips2 := make([]net.IP, len(ips))
+	// copy(ips2, ips)
+	// sort.Slice(ips2, func(i, j int) bool {
+	// 	return bytes.Compare(ips2[i], ips2[j]) < 0
 	// })
+	return ips
 }
 
 // returns a map with nodes and egress IPs that have been assigned to them. This should preserve IPs that are already assigned.
