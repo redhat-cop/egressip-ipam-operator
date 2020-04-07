@@ -36,11 +36,13 @@ It is possible to specify a set of reserved IPs. These IPs must belong to the CI
 
 ## Passing EgressIPs as input
 
-The normal mode of operatios of this operator is to pick a random IP from the configured CIDR. However it also support a scenario where egressIP are picked by an external process and passed as input.
+The normal mode of operation of this operator is to pick a random IP from the configured CIDR. However, it also supports a scenario where egressIPs are picked by an external process and passed as input.
 
 In this case IPs must me passed as an annotation to the namespace, like this: `egressip-ipam-operator.redhat-cop.io/egressips=IP1,IP2...`. The value of the annotation is a comma separated array of ip with no spaces.
 
-There must be exactly one IP per CIDR defined in the referenced egressIPAM. Moreover each IP must belong to the corresponding CIDR. It also also a responsibility of the progress picking the IPs to ensure that those IPs are actually available.
+There must be exactly one IP per CIDR defined in the referenced egressIPAM. Moreover, each IP must belong to the corresponding CIDR. Because this situation can lead to inconsistencies, failing to have correspondence between IPs in the namespace annotation and CIDRs in the egressIPAM CR will cause the operator to error out and stop processing all the namespaces associated with the given EgressIPAM CR.
+
+It also also a responsibility of the progress picking the IPs to ensure that those IPs are actually available.
 
 ## Assumptions
 
@@ -148,6 +150,7 @@ OPERATOR_NAME='egressip-ipam-operator' NAMESPACE='egressip-ipam-operator' operat
 ```shell
 oc apply -f test/egressIPAM-baremetal.yaml
 oc apply -f test/namespace-baremetal.yaml
+
 ```
 
 ### AWS test
@@ -165,6 +168,8 @@ done
 ```shell
 oc apply -f test/egressIPAM-AWS.yaml
 oc apply -f test/namespace-AWS.yaml
+#test erroneous namespace
+oc apply -f test/erroneous-namespace-AWS.yaml
 ```
 
 ## Release Process

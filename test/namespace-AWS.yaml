@@ -11,4 +11,5 @@ kind: Namespace
 metadata:
   name: egressipam-aws-test-1
   annotations:
-    egressip-ipam-operator.redhat-cop.io/egressipam:  egressipam-aws      
+    egressip-ipam-operator.redhat-cop.io/egressipam:  egressipam-aws
+        

@@ -461,24 +461,24 @@ func getOperatorNamespace() (string, error) {
 func (r *ReconcileEgressIPAM) IsValid(obj metav1.Object) (bool, error) {
 	ergessIPAM, ok := obj.(*redhatcopv1alpha1.EgressIPAM)
 	if !ok {
-		return false, errs.New("unable to conver to egressIPAM")
+		return false, errs.New("unable to convert to egressIPAM")
 	}
 	for _, CIDRAssignemnt := range ergessIPAM.Spec.CIDRAssignments {
 		_, cidr, err := net.ParseCIDR(CIDRAssignemnt.CIDR)
 		if err != nil {
-			log.Error(err, "unable to conver to", "cidr", CIDRAssignemnt.CIDR)
+			log.Error(err, "unable to convert to", "cidr", CIDRAssignemnt.CIDR)
 			return false, err
 		}
 		for _, ipstr := range CIDRAssignemnt.ReservedIPs {
 			ip := net.ParseIP(ipstr)
 			if ip == nil {
-				err := errs.New("unable to parse ip")
-				log.Error(err, "unable to parse", "ip", ipstr)
+				err := errs.New("unable to parse IP: " + ipstr)
+				log.Error(err, "unable to parse", "IP", ipstr)
 				return false, err
 			}
 			if !cidr.Contains(ip) {
-				err := errs.New("ip not contained in relative CIDR")
-				log.Error(err, "not contained", "ip", ip, "cidr", cidr)
+				err := errs.New("IP " + ipstr + " not contained in relative CIDR: " + CIDRAssignemnt.CIDR)
+				log.Error(err, "not contained", "IP", ip, "cidr", cidr)
 				return false, err
 			}
 		}
@@ -490,7 +490,7 @@ func (r *ReconcileEgressIPAM) IsInitialized(obj metav1.Object) bool {
 	isInitialized := true
 	ergessIPAM, ok := obj.(*redhatcopv1alpha1.EgressIPAM)
 	if !ok {
-		log.Error(errs.New("unable to conver to egressIPAM"), "unable to conver to egressIPAM")
+		log.Error(errs.New("unable to convert to egressIPAM"), "unable to convert to egressIPAM")
 		return false
 	}
 	if !util.HasFinalizer(ergessIPAM, controllerName) {

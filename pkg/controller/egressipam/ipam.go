@@ -138,7 +138,7 @@ func getNextAvailableIP(cidrs string, assignedIPs []net.IP) (net.IP, []net.IP, e
 		return net.IP{}, []net.IP{}, err
 	}
 	if uint32(len(assignedIPs)) == ipmath.NetworkSize(cidr) {
-		return net.IP{}, []net.IP{}, errors.New("no more available IPs in this CIDR")
+		return net.IP{}, []net.IP{}, errors.New("no more available IPs in this CIDR: " + cidr.String())
 	}
 	for i := range assignedIPs {
 		if !assignedIPs[i].Equal(ipmath.DeltaIP(cidr.IP, i)) {
