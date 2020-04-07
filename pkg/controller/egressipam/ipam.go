@@ -12,6 +12,7 @@ import (
 	ocpconfigv1 "github.com/openshift/api/config/v1"
 	redhatcopv1alpha1 "github.com/redhat-cop/egressip-ipam-operator/pkg/apis/redhatcop/v1alpha1"
 	"github.com/scylladb/go-set/strset"
+	"github.com/scylladb/go-set/u32set"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -155,6 +156,8 @@ func sortIPs(ips []net.IP) []net.IP {
 	for _, ip := range ips {
 		ipstrs = append(ipstrs, ipmath.ToUInt32(ip))
 	}
+	//shake off eventual duplicates
+	ipstrs = u32set.New(ipstrs...).List()
 	sort.Slice(ipstrs, func(i, j int) bool { return ipstrs[i] < ipstrs[j] })
 	ips = []net.IP{}
 	for _, ipstr := range ipstrs {
