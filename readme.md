@@ -17,6 +17,8 @@ spec:
   cidrAssignments:
     - labelValue: "true"
       CIDR: 192.169.0.0/24
+      reservedIPs:
+      - "192.159.0.5"
   topologyLabel: egressGateway
   nodeSelector:
     node-role.kubernetes.io/worker: ""
@@ -29,6 +31,8 @@ Note that the `cidrAssigments` field is an array and therefore, multiple groups 
 In the bare metal scenario, when this egressCRD is created, all the `hostsubnet` relative to the nodes selected by this EgressIPAM will be update to have the EgressCIDRs field equal to the specified CIDR (see below for cloud provider scenarios).
 
 When a namespace is created with the opt-in annotation: `egressip-ipam-operator.redhat-cop.io/egressipam=<egressIPAM>`, an available egressIP is selected from the CIDR and assigned to the namespace.The `netnamespace` associated with this namespace is updated to use that egressIP.
+
+It is possible to specify a set of reserved IPs. These IPs must belong to the CIDR and will never be assigned.
 
 ## Passing EgressIPs as input
 

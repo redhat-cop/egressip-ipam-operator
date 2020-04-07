@@ -464,10 +464,23 @@ func (r *ReconcileEgressIPAM) IsValid(obj metav1.Object) (bool, error) {
 		return false, errs.New("unable to conver to egressIPAM")
 	}
 	for _, CIDRAssignemnt := range ergessIPAM.Spec.CIDRAssignments {
-		_, _, err := net.ParseCIDR(CIDRAssignemnt.CIDR)
+		_, cidr, err := net.ParseCIDR(CIDRAssignemnt.CIDR)
 		if err != nil {
 			log.Error(err, "unable to conver to", "cidr", CIDRAssignemnt.CIDR)
 			return false, err
+		}
+		for _, ipstr := range CIDRAssignemnt.ReservedIPs {
+			ip := net.ParseIP(ipstr)
+			if ip == nil {
+				err := errs.New("unable to parse ip")
+				log.Error(err, "unable to parse", "ip", ipstr)
+				return false, err
+			}
+			if !cidr.Contains(ip) {
+				err := errs.New("ip not contained in relative CIDR")
+				log.Error(err, "not contained", "ip", ip, "cidr", cidr)
+				return false, err
+			}
 		}
 	}
 	return true, nil

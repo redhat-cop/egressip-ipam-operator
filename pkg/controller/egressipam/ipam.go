@@ -16,6 +16,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+func getReservedIPsByCIDR(egressIPAM *redhatcopv1alpha1.EgressIPAM) map[string][]net.IP {
+	reservedIPsByCIDR := map[string][]net.IP{}
+	for _, cidrAssignment := range egressIPAM.Spec.CIDRAssignments {
+		ips := []net.IP{}
+		for _, ipstr := range cidrAssignment.ReservedIPs {
+			ips = append(ips, net.ParseIP(ipstr))
+		}
+		reservedIPsByCIDR[cidrAssignment.CIDR] = ips
+	}
+	return reservedIPsByCIDR
+}
+
 // Assigns ips to unassigned namespaces and updates them
 func (r *ReconcileEgressIPAM) assignIPsToNamespaces(unassignedNamespaces []corev1.Namespace, assignedNamespaces []corev1.Namespace, egressIPAM *redhatcopv1alpha1.EgressIPAM) ([]corev1.Namespace, error) {
 	IPsByCIDR, err := sortIPsByCIDR(assignedNamespaces, egressIPAM)
@@ -35,6 +47,13 @@ func (r *ReconcileEgressIPAM) assignIPsToNamespaces(unassignedNamespaces []corev
 		IPsByCIDR[cidr] = append(IPsByCIDR[cidr], base, broadcastip)
 	}
 	log.V(1).Info("adding always excluded network IPs ", "IPs by CIDR", IPsByCIDR)
+
+	// add reserved ips
+	reservedIPsByCIDR := getReservedIPsByCIDR(egressIPAM)
+	for cidr := range IPsByCIDR {
+		IPsByCIDR[cidr] = append(IPsByCIDR[cidr], reservedIPsByCIDR[cidr]...)
+	}
+	log.V(1).Info("adding reserved IPs ", "IPs by CIDR", IPsByCIDR)
 
 	// if nodes' IPs are in the CIDR, they should count as assigned.
 	nodesIPsByCIDR, err := r.getNodesIPsByCIDR(egressIPAM)
