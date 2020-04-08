@@ -16,7 +16,7 @@ spec:
       containers:
         - name: egressip-ipam-operator
           # Replace this with the built image name
-          image: quay.io/redhat-cop/egressip-ipam-operator:v0.1.0
+          image: quay.io/redhat-cop/egressip-ipam-operator:v0.1.1
           command:
           - egressip-ipam-operator
           imagePullPolicy: Always

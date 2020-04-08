@@ -31,7 +31,6 @@ rules:
     resources:
     - nodes
     - namespaces
-    - secrets
     verbs:
     - get
     - list

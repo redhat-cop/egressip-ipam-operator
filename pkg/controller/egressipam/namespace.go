@@ -2,6 +2,7 @@ package egressipam
 
 import (
 	"context"
+	"errors"
 	"net"
 	"strings"
 
@@ -86,14 +87,31 @@ func (r *ReconcileEgressIPAM) getReferringNamespaces(egressIPAM *redhatcopv1alph
 func sortIPsByCIDR(assignedNamespaces []corev1.Namespace, egressIPAM *redhatcopv1alpha1.EgressIPAM) (map[string][]net.IP, error) {
 	IPsMatrix := [][]net.IP{}
 	IPsByCIDR := map[string][]net.IP{}
-	for range egressIPAM.Spec.CIDRAssignments {
+	CIDRs := []*net.IPNet{}
+	for _, CIDRassigment := range egressIPAM.Spec.CIDRAssignments {
 		IPsMatrix = append(IPsMatrix, []net.IP{})
+		_, CIDR, err := net.ParseCIDR(CIDRassigment.CIDR)
+		if err != nil {
+			log.Error(err, "unable to parse ", "cidr", CIDRassigment.CIDR)
+			return map[string][]net.IP{}, err
+		}
+		CIDRs = append(CIDRs, CIDR)
 	}
 	for _, namespace := range assignedNamespaces {
 		if value, ok := namespace.GetAnnotations()[namespaceAssociationAnnotation]; ok {
 			ipstrings := strings.Split(value, ",")
 			for i := range IPsMatrix {
 				IP := net.ParseIP(ipstrings[i])
+				if IP == nil {
+					err := errors.New("unable to parse IP: " + ipstrings[i] + " in namespace: " + namespace.GetName())
+					log.Error(err, "unable to parse ", "IP", ipstrings[i], "for namespace", namespace.GetName)
+					return map[string][]net.IP{}, err
+				}
+				if !CIDRs[i].Contains(IP) {
+					err := errors.New("IP: " + IP.String() + " does not belong to CIDR: " + CIDRs[i].String() + " for namespace" + namespace.GetName())
+					log.Error(err, "assigned ", "IP", ipstrings[i], "does not belong to CIDR", CIDRs[i], "for namespace", namespace.GetName)
+					return map[string][]net.IP{}, err
+				}
 				IPsMatrix[i] = append(IPsMatrix[i], IP)
 			}
 		}

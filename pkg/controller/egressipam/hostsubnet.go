@@ -82,22 +82,23 @@ func (e *enqueForSelectingEgressIPAMHostSubnet) Generic(evt event.GenericEvent, 
 }
 
 // ensures that hostsubntes have the correct egressIPs
-func (r *ReconcileEgressIPAM) reconcileHSAssignedIPs(nodeAssignedIPs map[string][]string) error {
-	for node, ips := range nodeAssignedIPs {
-		hostsubnet, err := r.getHostSubnet(node)
+func (r *ReconcileEgressIPAM) reconcileHSAssignedIPs(nodeAssignedIPs map[string][]string, egressIPAM *redhatcopv1alpha1.EgressIPAM) error {
+	nodes, err := r.getSelectedNodes(egressIPAM)
+	if err != nil {
+		log.Error(err, "unable to get all selected nodes for ", "egressIPAM", egressIPAM)
+		return err
+	}
+	for _, node := range nodes {
+		hostsubnet, err := r.getHostSubnet(node.GetName())
 		if err != nil {
-			log.Error(err, "unable to lookup hostsubnet for ", "node", node)
+			log.Error(err, "unable to lookup hostsubnet for ", "node", node.GetName)
 			return err
 		}
-		ipsstr := []string{}
-		for _, ip := range ips {
-			ipsstr = append(ipsstr, ip)
-		}
-		if !reflect.DeepEqual(ipsstr, hostsubnet.EgressIPs) {
-			hostsubnet.EgressIPs = ipsstr
+		if !reflect.DeepEqual(nodeAssignedIPs[node.GetName()], hostsubnet.EgressIPs) {
+			hostsubnet.EgressIPs = nodeAssignedIPs[node.GetName()]
 			err := r.GetClient().Update(context.TODO(), &hostsubnet, &client.UpdateOptions{})
 			if err != nil {
-				log.Error(err, "unable to update", "hostsubnet ", hostsubnet, "with ips", ipsstr)
+				log.Error(err, "unable to update", "hostsubnet ", hostsubnet, "with ips", nodeAssignedIPs[node.GetName()])
 				return err
 			}
 		}
@@ -106,8 +107,19 @@ func (r *ReconcileEgressIPAM) reconcileHSAssignedIPs(nodeAssignedIPs map[string]
 }
 
 // ensures that hostsubnets have the correct CIDR
-func (r *ReconcileEgressIPAM) assignCIDRsToHostSubnets(nodeByCIDR map[string][]corev1.Node) error {
-	for cidr, nodes := range nodeByCIDR {
+func (r *ReconcileEgressIPAM) assignCIDRsToHostSubnets(nodesByCIDR map[string][]corev1.Node, egressIPAM *redhatcopv1alpha1.EgressIPAM) error {
+	selectedNodesByCIDR, err := r.getSelectedNodesByCIDR(egressIPAM)
+	if err != nil {
+		log.Error(err, "unable to get all selected nodes for ", "egressIPAM", egressIPAM)
+		return err
+	}
+	cidrByNode := map[string]string{}
+	for cidr, nodes := range nodesByCIDR {
+		for _, node := range nodes {
+			cidrByNode[node.GetName()] = cidr
+		}
+	}
+	for cidr, nodes := range selectedNodesByCIDR {
 		cidrs := []string{cidr}
 		for _, node := range nodes {
 			hostsubnet, err := r.getHostSubnet(node.GetName())
@@ -115,8 +127,8 @@ func (r *ReconcileEgressIPAM) assignCIDRsToHostSubnets(nodeByCIDR map[string][]c
 				log.Error(err, "unable to lookup hostsubnet for ", "node", node)
 				return err
 			}
-			if !reflect.DeepEqual(hostsubnet.EgressCIDRs, cidrs) {
-				hostsubnet.EgressCIDRs = cidrs
+			if !reflect.DeepEqual(hostsubnet.EgressCIDRs, []string{cidrByNode[node.GetName()]}) {
+				hostsubnet.EgressCIDRs = []string{cidrByNode[node.GetName()]}
 				err := r.GetClient().Update(context.TODO(), &hostsubnet, &client.UpdateOptions{})
 				if err != nil {
 					log.Error(err, "unable to update", "hostsubnet ", hostsubnet, "with cidrs", cidrs)

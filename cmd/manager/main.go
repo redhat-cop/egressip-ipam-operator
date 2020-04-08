@@ -132,7 +132,7 @@ func main() {
 	}
 
 	// Add the Metrics Service
-	addMetrics(ctx, cfg, namespace)
+	//addMetrics(ctx, cfg, namespace)
 
 	log.Info("Starting the Cmd.")
 

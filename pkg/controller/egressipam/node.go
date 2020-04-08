@@ -159,19 +159,18 @@ func (r *ReconcileEgressIPAM) getNodesIPsByCIDR(egressIPAM *redhatcopv1alpha1.Eg
 		return map[string][]net.IP{}, err
 	}
 	for _, node := range nodes.Items {
+		hostsubnet, err := r.getHostSubnet(node.GetName())
+		if err != nil {
+			log.Error(err, "unable to get hostsubnet from ", "node", node.GetName)
+			return map[string][]net.IP{}, err
+		}
 		for _, CIDRassigments := range egressIPAM.Spec.CIDRAssignments {
 			_, cidr, err := net.ParseCIDR(CIDRassigments.CIDR)
 			if err != nil {
 				log.Error(err, "unable to parse ", "cidr", cidr)
 				return map[string][]net.IP{}, err
 			}
-			var ipstr string
-			for _, address := range node.Status.Addresses {
-				if address.Type == corev1.NodeInternalIP {
-					ipstr = address.Address
-				}
-			}
-			ip := net.ParseIP(ipstr)
+			ip := net.ParseIP(hostsubnet.HostIP)
 			if cidr.Contains(ip) {
 				nodesIPsByCIDR[CIDRassigments.CIDR] = append(nodesIPsByCIDR[CIDRassigments.CIDR], ip)
 			}
