@@ -84,7 +84,7 @@ func (r *ReconcileEgressIPAM) assignIPsToNamespaces(unassignedNamespaces []corev
 			IPsByCIDR[cidr] = append(IPsByCIDR[cidr], ipmath.DeltaIP(base, 1), ipmath.DeltaIP(base, 2), ipmath.DeltaIP(base, 3))
 		}
 	}
-	log.V(1).Info("adding cloud infrastrcture reserved IPs ", "IPs by CIDR", IPsByCIDR)
+	log.V(1).Info("adding cloud infrastructure reserved IPs ", "IPs by CIDR", IPsByCIDR)
 
 	for cidr := range IPsByCIDR {
 		IPsByCIDR[cidr] = sortIPs(IPsByCIDR[cidr])
@@ -176,17 +176,21 @@ func (r *ReconcileEgressIPAM) assignIPsToNodes(assignedIPsByNode map[string][]st
 	// 1. get assignedIPsToNodesByCIDR
 	// 2. get assignedIPsToNamespacesByCIDR
 	// 3. calculate toBeAssignedIPsByCIDR
-	// 4. get NodesByCIDR
-	// 5. calculate NodesBy#AssignedIPByCIDR
-	// 6. assign IPs to the least assigned nodes, update map, by CIDR
+	// 4. recalculate assignedIPsToNodesByCIDR
+	// 5 recalculate assignedIPsByNode
+	// 6. get NodesByCIDR
+	// 7. calculate NodesBy#AssignedIPByCIDR
+	// 8. assign IPs to the least assigned nodes, update map, by CIDR
 
 	assignedIPsToNodesByCIDR := map[string][]string{}
 	assignedIPsToNamespaceByCIDR := map[string][]string{}
 	toBeAssignedToNodesIPsByCIDR := map[string][]string{}
+	toBeRemovedIPsFromNodesByCIDR := map[string][]string{}
 	for _, cidrAssignment := range egressIPAM.Spec.CIDRAssignments {
 		assignedIPsToNodesByCIDR[cidrAssignment.CIDR] = []string{}
 		assignedIPsToNamespaceByCIDR[cidrAssignment.CIDR] = []string{}
 		toBeAssignedToNodesIPsByCIDR[cidrAssignment.CIDR] = []string{}
+		toBeRemovedIPsFromNodesByCIDR[cidrAssignment.CIDR] = []string{}
 	}
 	// 1. get assignedIPsToNodesByCIDR
 	for _, ipsbn := range assignedIPsByNode {
@@ -203,7 +207,7 @@ func (r *ReconcileEgressIPAM) assignIPsToNodes(assignedIPsByNode map[string][]st
 			}
 		}
 	}
-
+	log.V(1).Info("", "assignedIPsToNodesByCIDR: ", assignedIPsToNodesByCIDR)
 	// 2. get assignedIPsToNamespacesByCIDR
 	for _, namespace := range assignedNamespaces {
 		ipsstr, ok := namespace.GetAnnotations()[namespaceAssociationAnnotation]
@@ -225,20 +229,44 @@ func (r *ReconcileEgressIPAM) assignIPsToNodes(assignedIPsByNode map[string][]st
 			}
 		}
 	}
-
+	log.V(1).Info("", "assignedIPsToNamespaceByCIDR: ", assignedIPsToNamespaceByCIDR)
 	// 3. calculate toBeAssignedIPsByCIDR
 	for cidr := range assignedIPsToNamespaceByCIDR {
 		toBeAssignedToNodesIPsByCIDR[cidr] = strset.Difference(strset.New(assignedIPsToNamespaceByCIDR[cidr]...), strset.New(assignedIPsToNodesByCIDR[cidr]...)).List()
 	}
 
-	// 4. get NodesByCIDR
+	log.V(1).Info("", "toBeAssignedToNodesIPsByCIDR: ", toBeAssignedToNodesIPsByCIDR)
+
+	// 4. recalculate assignedIPsToNodesByCIDR
+	for cidr := range assignedIPsToNamespaceByCIDR {
+		assignedIPsToNodesByCIDR[cidr] = strset.Intersection(strset.New(assignedIPsToNodesByCIDR[cidr]...), strset.New(assignedIPsToNamespaceByCIDR[cidr]...)).List()
+	}
+	log.V(1).Info("new", "assignedIPsToNodesByCIDR: ", assignedIPsToNodesByCIDR)
+
+	// 5 recalculate assignedIPsByNode
+	newAssignedIPsByNode := map[string][]string{}
+	for _, assignedIPs := range assignedIPsToNodesByCIDR {
+		for _, assignedIP := range assignedIPs {
+			for node, assignedIPs := range assignedIPsByNode {
+				for _, assignedIPToNode := range assignedIPs {
+					if assignedIP == assignedIPToNode {
+						newAssignedIPsByNode[node] = append(newAssignedIPsByNode[node], assignedIP)
+					}
+				}
+			}
+		}
+	}
+	assignedIPsByNode = newAssignedIPsByNode
+	log.V(1).Info("new", "assignedIPsByNode: ", assignedIPsByNode)
+
+	// 6. get NodesByCIDR
 	nodesByCIDR, err := r.getSelectedNodesByCIDR(egressIPAM)
 	if err != nil {
 		log.Error(err, "unable to get nodes by CIDR")
 		return map[string][]string{}, err
 	}
 
-	// 5. calculate NodesByNumberOfAssignedIPByCIDR
+	// 7. calculate NodesByNumberOfAssignedIPByCIDR
 	nodesByNumberOfAssignedIPsByCIDR := map[string]map[int][]corev1.Node{}
 	for cidr := range toBeAssignedToNodesIPsByCIDR {
 		nodesByNumberOfAssignedIPsByCIDR[cidr] = map[int][]corev1.Node{}
@@ -247,7 +275,7 @@ func (r *ReconcileEgressIPAM) assignIPsToNodes(assignedIPsByNode map[string][]st
 		}
 	}
 
-	// 6. assign IPs to the least assigned nodes, update map, by CIDR
+	// 8. assign IPs to the least assigned nodes, update map, by CIDR
 	for cidr, ips := range toBeAssignedToNodesIPsByCIDR {
 		for _, ip := range ips {
 			//pick the first node with the least IPs in this CIDR

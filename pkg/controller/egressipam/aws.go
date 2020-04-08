@@ -53,7 +53,7 @@ func getAWSIDFromProviderID(providerID string) string {
 
 // removes AWS secondary IPs that are currently assigned but not needed
 func (r *ReconcileEgressIPAM) removeAWSUnusedIPs(client *ec2.EC2, nodeMap map[string]corev1.Node, assignedIPsByNode map[string][]string) error {
-	for node, assidnedIPsToNode := range assignedIPsByNode {
+	for node, _ := range nodeMap {
 		instance, err := getAWSInstance(client, nodeMap[node])
 		if err != nil {
 			log.Error(err, "unable to get aws instance for", "node", node)
@@ -65,12 +65,13 @@ func (r *ReconcileEgressIPAM) removeAWSUnusedIPs(client *ec2.EC2, nodeMap map[st
 				awsAssignedIPs = append(awsAssignedIPs, *ipipas.PrivateIpAddress)
 			}
 		}
-		toBeRemovedIPs := strset.Difference(strset.New(awsAssignedIPs...), strset.New(assidnedIPsToNode...)).List()
+		toBeRemovedIPs := strset.Difference(strset.New(awsAssignedIPs...), strset.New(assignedIPsByNode[node]...)).List()
 		if len(toBeRemovedIPs) > 0 {
 			log.Info("vm", "instance ", instance.InstanceId, " will be freed from IPs ", toBeRemovedIPs)
 			toBeRemovedIPsAWSStr := []*string{}
 			for _, ip := range toBeRemovedIPs {
-				toBeRemovedIPsAWSStr = append(toBeRemovedIPsAWSStr, &ip)
+				copyip := ip
+				toBeRemovedIPsAWSStr = append(toBeRemovedIPsAWSStr, &copyip)
 			}
 
 			input := &ec2.UnassignPrivateIpAddressesInput{
@@ -107,7 +108,8 @@ func (r *ReconcileEgressIPAM) reconcileAWSAssignedIPs(client *ec2.EC2, nodeMap m
 			log.Info("vm", "instance ", instance.InstanceId, " will be assigned IPs ", toBeAssignedIPs)
 			toBeAssignedIPsAWSStr := []*string{}
 			for _, ip := range toBeAssignedIPs {
-				toBeAssignedIPsAWSStr = append(toBeAssignedIPsAWSStr, &ip)
+				copyip := ip
+				toBeAssignedIPsAWSStr = append(toBeAssignedIPsAWSStr, &copyip)
 			}
 
 			input := &ec2.AssignPrivateIpAddressesInput{

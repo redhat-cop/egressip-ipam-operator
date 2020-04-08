@@ -344,7 +344,7 @@ func (r *ReconcileEgressIPAM) Reconcile(request reconcile.Request) (reconcile.Re
 			log.Error(err, "unable to get nodes selected by ", "instance", instance)
 			return r.ManageError(instance, err)
 		}
-		err = r.assignCIDRsToHostSubnets(nodesByCIDR)
+		err = r.assignCIDRsToHostSubnets(nodesByCIDR, instance)
 		if err != nil {
 			log.Error(err, "unable to assigne CIDR to hostsubnets from ", "nodesByCIDR", nodesByCIDR)
 			return r.ManageError(instance, err)
@@ -384,13 +384,14 @@ func (r *ReconcileEgressIPAM) Reconcile(request reconcile.Request) (reconcile.Re
 			log.Error(err, "unable to assign egress IPs to nodes")
 			return r.ManageError(instance, err)
 		}
+		log.V(1).Info("", "assignedIPsByNode", assignedIPsByNode)
 
 		err = r.reconcileAWSAssignedIPs(client, nodeMap, assignedIPsByNode)
 		if err != nil {
 			log.Error(err, "unable to assign egress IPs to aws machines")
 			return r.ManageError(instance, err)
 		}
-		err = r.reconcileHSAssignedIPs(assignedIPsByNode)
+		err = r.reconcileHSAssignedIPs(assignedIPsByNode, instance)
 		if err != nil {
 			log.Error(err, "unable to reconcile hostsubnest with ", "nodes", assignedIPsByNode)
 			return r.ManageError(instance, err)
