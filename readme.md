@@ -140,7 +140,7 @@ oc apply -f deploy/role.yaml -n egressip-ipam-operator
 oc apply -f deploy/role_binding.yaml -n egressip-ipam-operator
 export token=$(oc serviceaccounts get-token 'egressip-ipam-operator' -n egressip-ipam-operator)
 oc login --token=${token}
-OPERATOR_NAME='egressip-ipam-operator' NAMESPACE='egressip-ipam-operator' operator-sdk --verbose up local --namespace "" --operator-flags="--zap-level=debug"
+OPERATOR_NAME='egressip-ipam-operator' NAMESPACE='egressip-ipam-operator' operator-sdk --verbose run --local --namespace "" --operator-flags="--zap-level=debug"
 ```
 
 ## Testing

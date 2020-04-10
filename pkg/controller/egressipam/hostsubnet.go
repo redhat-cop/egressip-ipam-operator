@@ -6,6 +6,7 @@ import (
 
 	ocpnetv1 "github.com/openshift/api/network/v1"
 	redhatcopv1alpha1 "github.com/redhat-cop/egressip-ipam-operator/pkg/apis/redhatcop/v1alpha1"
+	"github.com/scylladb/go-set/strset"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
@@ -94,7 +95,7 @@ func (r *ReconcileEgressIPAM) reconcileHSAssignedIPs(nodeAssignedIPs map[string]
 			log.Error(err, "unable to lookup hostsubnet for ", "node", node.GetName)
 			return err
 		}
-		if !reflect.DeepEqual(nodeAssignedIPs[node.GetName()], hostsubnet.EgressIPs) {
+		if !strset.New(nodeAssignedIPs[node.GetName()]...).IsEqual(strset.New(hostsubnet.EgressIPs...)) {
 			hostsubnet.EgressIPs = nodeAssignedIPs[node.GetName()]
 			err := r.GetClient().Update(context.TODO(), &hostsubnet, &client.UpdateOptions{})
 			if err != nil {
@@ -127,7 +128,7 @@ func (r *ReconcileEgressIPAM) assignCIDRsToHostSubnets(nodesByCIDR map[string][]
 				log.Error(err, "unable to lookup hostsubnet for ", "node", node)
 				return err
 			}
-			if !reflect.DeepEqual(hostsubnet.EgressCIDRs, []string{cidrByNode[node.GetName()]}) {
+			if !strset.New(hostsubnet.EgressCIDRs...).IsEqual(strset.New([]string{cidrByNode[node.GetName()]}...)) {
 				hostsubnet.EgressCIDRs = []string{cidrByNode[node.GetName()]}
 				err := r.GetClient().Update(context.TODO(), &hostsubnet, &client.UpdateOptions{})
 				if err != nil {
