@@ -91,14 +91,14 @@ func (r *ReconcileEgressIPAM) assignIPsToNamespaces(unassignedNamespaces []corev
 	}
 	log.V(1).Info("sorted reserved IPs ", "IPs by CIDR", IPsByCIDR)
 	for i := range unassignedNamespaces {
-		IPs, err := getNextAvailableIPs(IPsByCIDR)
+		newIPsByCIDRs, err := getNextAvailableIPs(IPsByCIDR)
 		if err != nil {
 			log.Error(err, "unable to assing new IPs for ", "namespace", unassignedNamespaces[i])
 			return []corev1.Namespace{}, err
 		}
 		ipstrings := []string{}
-		for _, IP := range IPs {
-			ipstrings = append(ipstrings, IP.String())
+		for _, cidrAssignment := range egressIPAM.Spec.CIDRAssignments {
+			ipstrings = append(ipstrings, newIPsByCIDRs[cidrAssignment.CIDR].String())
 		}
 		log.Info("ips assigned to", "namespace", unassignedNamespaces[i].GetName(), "ips", ipstrings)
 		unassignedNamespaces[i].ObjectMeta.Annotations[namespaceAssociationAnnotation] = strings.Join(ipstrings, ",")
@@ -113,18 +113,18 @@ func (r *ReconcileEgressIPAM) assignIPsToNamespaces(unassignedNamespaces []corev
 
 // returns a set of IPs. These IPs are the next available IP per CIDR.
 // The map of CIDR is passed by reference and updated with the new IPs, so this function can be used in a loop.
-func getNextAvailableIPs(IPsByCIDR map[string][]net.IP) ([]net.IP, error) {
+func getNextAvailableIPs(IPsByCIDR map[string][]net.IP) (map[string]net.IP, error) {
 	log.V(1).Info("Assigning new IPs from", "IPs by CIDR", IPsByCIDR)
-	iPsByCIDR := IPsByCIDR
-	assignedIPs := []net.IP{}
-	for cidr := range iPsByCIDR {
-		assignedIP, newIPs, err := getNextAvailableIP(cidr, iPsByCIDR[cidr])
+	//iPsByCIDR := IPsByCIDR
+	assignedIPs := map[string]net.IP{}
+	for cidr := range IPsByCIDR {
+		assignedIP, newIPs, err := getNextAvailableIP(cidr, IPsByCIDR[cidr])
 		if err != nil {
 			log.Error(err, "unable to assign get next ip for", "cidr", cidr)
-			return []net.IP{}, err
+			return map[string]net.IP{}, err
 		}
-		assignedIPs = append(assignedIPs, assignedIP)
-		iPsByCIDR[cidr] = newIPs
+		assignedIPs[cidr] = assignedIP
+		IPsByCIDR[cidr] = newIPs
 	}
 	log.V(1).Info("Assigned", "new IPs from", assignedIPs, " new IPs by CIDR", IPsByCIDR)
 	return assignedIPs, nil
@@ -185,12 +185,10 @@ func (r *ReconcileEgressIPAM) assignIPsToNodes(assignedIPsByNode map[string][]st
 	assignedIPsToNodesByCIDR := map[string][]string{}
 	assignedIPsToNamespaceByCIDR := map[string][]string{}
 	toBeAssignedToNodesIPsByCIDR := map[string][]string{}
-	toBeRemovedIPsFromNodesByCIDR := map[string][]string{}
 	for _, cidrAssignment := range egressIPAM.Spec.CIDRAssignments {
 		assignedIPsToNodesByCIDR[cidrAssignment.CIDR] = []string{}
 		assignedIPsToNamespaceByCIDR[cidrAssignment.CIDR] = []string{}
 		toBeAssignedToNodesIPsByCIDR[cidrAssignment.CIDR] = []string{}
-		toBeRemovedIPsFromNodesByCIDR[cidrAssignment.CIDR] = []string{}
 	}
 	// 1. get assignedIPsToNodesByCIDR
 	for _, ipsbn := range assignedIPsByNode {
@@ -266,23 +264,37 @@ func (r *ReconcileEgressIPAM) assignIPsToNodes(assignedIPsByNode map[string][]st
 		return map[string][]string{}, err
 	}
 
+	//log.V(1).Info("", "nodesByCIDR: ", nodesByCIDR)
+
 	// 7. calculate NodesByNumberOfAssignedIPByCIDR
-	nodesByNumberOfAssignedIPsByCIDR := map[string]map[int][]corev1.Node{}
+	nodesByNumberOfAssignedIPsByCIDR := map[string]map[int][]string{}
 	for cidr := range toBeAssignedToNodesIPsByCIDR {
-		nodesByNumberOfAssignedIPsByCIDR[cidr] = map[int][]corev1.Node{}
+		nodesByNumberOfAssignedIPsByCIDR[cidr] = map[int][]string{}
+		nodes := []string{}
 		for _, node := range nodesByCIDR[cidr] {
-			nodesByNumberOfAssignedIPsByCIDR[cidr][len(assignedIPsToNodesByCIDR[cidr])] = append(nodesByNumberOfAssignedIPsByCIDR[cidr][len(assignedIPsToNodesByCIDR[cidr])], node)
+			nodes = append(nodes, node.GetName())
 		}
+		nodesByNumberOfAssignedIPsByCIDR[cidr][len(nodes)] = nodes
 	}
+
+	log.V(1).Info("", "nodesByNumberOfAssignedIPsByCIDR: ", nodesByNumberOfAssignedIPsByCIDR)
 
 	// 8. assign IPs to the least assigned nodes, update map, by CIDR
 	for cidr, ips := range toBeAssignedToNodesIPsByCIDR {
 		for _, ip := range ips {
 			//pick the first node with the least IPs in this CIDR
+			log.V(1).Info("", "nodesByNumberOfAssignedIPsByCIDR: ", nodesByNumberOfAssignedIPsByCIDR)
 			minIPsPerNode := getMinKey(nodesByNumberOfAssignedIPsByCIDR[cidr])
+			if minIPsPerNode == -1 {
+				err := errors.New("Unable to find nodes for CIDR" + cidr)
+				log.Error(err, "", cidr, "nodes", nodesByNumberOfAssignedIPsByCIDR[cidr])
+				return map[string][]string{}, err
+			}
+			log.V(1).Info("", "minIPsPerNode: ", minIPsPerNode, "for cidr", cidr)
 			node := nodesByNumberOfAssignedIPsByCIDR[cidr][minIPsPerNode][0]
+			log.Info("assigning", "IP", ip, "to node", node)
 			// add the node to the assignedIP per node map
-			assignedIPsByNode[node.GetName()] = append(assignedIPsByNode[node.GetName()], ip)
+			assignedIPsByNode[node] = append(assignedIPsByNode[node], ip)
 			// remove the node from the minIPsPerNode map
 			nodesByNumberOfAssignedIPsByCIDR[cidr][minIPsPerNode] = nodesByNumberOfAssignedIPsByCIDR[cidr][minIPsPerNode][1:]
 			// add the node to the minIPsPerNode+1 map
@@ -293,10 +305,15 @@ func (r *ReconcileEgressIPAM) assignIPsToNodes(assignedIPsByNode map[string][]st
 	return assignedIPsByNode, nil
 }
 
-func getMinKey(nodemap map[int][]corev1.Node) int {
+func getMinKey(nodemap map[int][]string) int {
 	numbers := []int{}
-	for n := range nodemap {
-		numbers = append(numbers, n)
+	for n, nodes := range nodemap {
+		if len(nodes) > 0 {
+			numbers = append(numbers, n)
+		}
+	}
+	if len(numbers) == 0 {
+		return -1
 	}
 	sort.Ints(numbers)
 	return numbers[0]
