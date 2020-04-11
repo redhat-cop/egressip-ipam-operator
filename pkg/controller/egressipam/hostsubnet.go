@@ -109,7 +109,7 @@ func (r *ReconcileEgressIPAM) reconcileHSAssignedIPs(nodeAssignedIPs map[string]
 
 // ensures that hostsubnets have the correct CIDR
 func (r *ReconcileEgressIPAM) assignCIDRsToHostSubnets(nodesByCIDR map[string][]corev1.Node, egressIPAM *redhatcopv1alpha1.EgressIPAM) error {
-	selectedNodesByCIDR, err := r.getSelectedNodesByCIDR(egressIPAM)
+	selectedNodesByCIDR, _, err := r.getSelectedNodesByCIDR(egressIPAM)
 	if err != nil {
 		log.Error(err, "unable to get all selected nodes for ", "egressIPAM", egressIPAM)
 		return err

@@ -172,6 +172,18 @@ oc apply -f test/namespace-AWS.yaml
 oc apply -f test/erroneous-namespace-AWS.yaml
 ```
 
+Bulk test. Change numbers based on instance type and number of nodes [see also](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-eni.html#AvailableIpPerENI)
+
+```shell
+./test/test.sh create 15
+```
+
+to clean up
+
+```shell
+./test/test.sh delete 15
+```
+
 ## Release Process
 
 To release execute the following:

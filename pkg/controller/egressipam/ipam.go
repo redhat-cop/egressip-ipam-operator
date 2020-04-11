@@ -258,23 +258,21 @@ func (r *ReconcileEgressIPAM) assignIPsToNodes(assignedIPsByNode map[string][]st
 	log.V(1).Info("new", "assignedIPsByNode: ", assignedIPsByNode)
 
 	// 6. get NodesByCIDR
-	nodesByCIDR, err := r.getSelectedNodesByCIDR(egressIPAM)
+	_, nodesByCIDR, err := r.getSelectedNodesByCIDR(egressIPAM)
 	if err != nil {
 		log.Error(err, "unable to get nodes by CIDR")
 		return map[string][]string{}, err
 	}
 
-	//log.V(1).Info("", "nodesByCIDR: ", nodesByCIDR)
+	log.V(1).Info("", "nodesByCIDR: ", nodesByCIDR)
 
 	// 7. calculate NodesByNumberOfAssignedIPByCIDR
 	nodesByNumberOfAssignedIPsByCIDR := map[string]map[int][]string{}
-	for cidr := range toBeAssignedToNodesIPsByCIDR {
+	for cidr := range nodesByCIDR {
 		nodesByNumberOfAssignedIPsByCIDR[cidr] = map[int][]string{}
-		nodes := []string{}
 		for _, node := range nodesByCIDR[cidr] {
-			nodes = append(nodes, node.GetName())
+			nodesByNumberOfAssignedIPsByCIDR[cidr][len(newAssignedIPsByNode[node])] = append(nodesByNumberOfAssignedIPsByCIDR[cidr][len(newAssignedIPsByNode[node])], node)
 		}
-		nodesByNumberOfAssignedIPsByCIDR[cidr][len(nodes)] = nodes
 	}
 
 	log.V(1).Info("", "nodesByNumberOfAssignedIPsByCIDR: ", nodesByNumberOfAssignedIPsByCIDR)

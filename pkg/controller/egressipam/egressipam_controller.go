@@ -94,7 +94,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		return err
 	}
 
-	IsCreatedOrIsAnnotationChanged := predicate.Funcs{
+	IsCreatedOrDeleted := predicate.Funcs{
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			return false
 		},
@@ -116,12 +116,12 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		},
 	}}, &enqueForSelectingEgressIPAMNode{
 		r: reconcileEgressIPAM,
-	}, &IsCreatedOrIsAnnotationChanged)
+	}, &IsCreatedOrDeleted)
 	if err != nil {
 		return err
 	}
 
-	IsCreatedOrIsEgressCIDRsChanged := predicate.Funcs{
+	IsCreatedORDeletedOrIsEgressCIDRsChanged := predicate.Funcs{
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			oldHostSubnet, ok := e.ObjectOld.(*ocpnetv1.HostSubnet)
 			if !ok {
@@ -139,7 +139,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 			return true
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
-			return false
+			return true
 		},
 		GenericFunc: func(e event.GenericEvent) bool {
 			return false
@@ -153,7 +153,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		},
 	}}, &enqueForSelectingEgressIPAMHostSubnet{
 		r: reconcileEgressIPAM,
-	}, &IsCreatedOrIsEgressCIDRsChanged)
+	}, &IsCreatedORDeletedOrIsEgressCIDRsChanged)
 	if err != nil {
 		return err
 	}
@@ -339,7 +339,7 @@ func (r *ReconcileEgressIPAM) Reconcile(request reconcile.Request) (reconcile.Re
 
 	//baremetal
 	if infrastrcuture.Status.Platform == ocpconfigv1.NonePlatformType {
-		nodesByCIDR, err := r.getSelectedNodesByCIDR(instance)
+		nodesByCIDR, _, err := r.getSelectedNodesByCIDR(instance)
 		if err != nil {
 			log.Error(err, "unable to get nodes selected by ", "instance", instance)
 			return r.ManageError(instance, err)

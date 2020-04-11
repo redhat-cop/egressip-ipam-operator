@@ -85,32 +85,34 @@ func (r *ReconcileEgressIPAM) getNode(hostsubnet *ocpnetv1.HostSubnet) (corev1.N
 }
 
 // returns nodes selected by this egressIPAM sorted by the CIDR
-func (r *ReconcileEgressIPAM) getSelectedNodesByCIDR(egressIPAM *redhatcopv1alpha1.EgressIPAM) (map[string][]corev1.Node, error) {
+func (r *ReconcileEgressIPAM) getSelectedNodesByCIDR(egressIPAM *redhatcopv1alpha1.EgressIPAM) (map[string][]corev1.Node, map[string][]string, error) {
 	nodes, err := r.getSelectedNodes(egressIPAM)
 	if err != nil {
 		log.Error(err, "unabler to get selected nodes for ", "egressIPAM", egressIPAM)
-		return map[string][]corev1.Node{}, err
+		return map[string][]corev1.Node{}, map[string][]string{}, err
 	}
-	selectedNdesByCIDR := map[string][]corev1.Node{}
+	selectedNodesByCIDR := map[string][]corev1.Node{}
+	selectedNodeNamesByCIDR := map[string][]string{}
 	CIDRbyLabel := map[string]string{}
 	for _, cidrAssignment := range egressIPAM.Spec.CIDRAssignments {
 		_, _, err := net.ParseCIDR(cidrAssignment.CIDR)
 		if err != nil {
 			log.Error(err, "unable to parse", "cidr", cidrAssignment.CIDR)
-			return map[string][]corev1.Node{}, err
+			return map[string][]corev1.Node{}, map[string][]string{}, err
 		}
-
 		CIDRbyLabel[cidrAssignment.LabelValue] = cidrAssignment.CIDR
-		selectedNdesByCIDR[cidrAssignment.CIDR] = []corev1.Node{}
+		selectedNodesByCIDR[cidrAssignment.CIDR] = []corev1.Node{}
+		selectedNodeNamesByCIDR[cidrAssignment.CIDR] = []string{}
 	}
 	for _, node := range nodes {
 		if value, ok := node.GetLabels()[egressIPAM.Spec.TopologyLabel]; ok {
 			if cidr, ok := CIDRbyLabel[value]; ok {
-				selectedNdesByCIDR[cidr] = append(selectedNdesByCIDR[cidr], node)
+				selectedNodesByCIDR[cidr] = append(selectedNodesByCIDR[cidr], node)
+				selectedNodeNamesByCIDR[cidr] = append(selectedNodeNamesByCIDR[cidr], node.GetName())
 			}
 		}
 	}
-	return selectedNdesByCIDR, nil
+	return selectedNodesByCIDR, selectedNodeNamesByCIDR, nil
 }
 
 func (r *ReconcileEgressIPAM) getSelectedNodes(egressIPAM *redhatcopv1alpha1.EgressIPAM) ([]corev1.Node, error) {
