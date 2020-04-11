@@ -158,10 +158,11 @@ oc apply -f test/namespace-baremetal.yaml
 based on the output of the below command, configure your egressIPAM for AWS.
 
 ```shell
+export region=$(oc get infrastructure cluster -o jsonpath='{.status.platformStatus.aws.region}')
 for vmidurl in $(oc get nodes -l node-role.kubernetes.io/worker="" -o json | jq -r .items[].spec.providerID); do
   vmid=${vmidurl##*/}
-  subnetid=$(aws ec2 --region eu-central-1 describe-instances --instance-ids ${vmid} | jq -r .Reservations[0].Instances[0].NetworkInterfaces[0].SubnetId)
-  echo $(aws ec2 --region eu-central-1 describe-subnets --subnet-ids ${subnetid} | jq -r '.Subnets[0] | .CidrBlock + " " + .AvailabilityZone')
+  subnetid=$(aws ec2 --region ${region} describe-instances --instance-ids ${vmid} | jq -r .Reservations[0].Instances[0].NetworkInterfaces[0].SubnetId)
+  echo $(aws ec2 --region ${region} describe-subnets --subnet-ids ${subnetid} | jq -r '.Subnets[0] | .CidrBlock + " " + .AvailabilityZone')
 done
 ```  
 

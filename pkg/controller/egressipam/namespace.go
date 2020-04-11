@@ -6,7 +6,6 @@ import (
 	"net"
 	"strings"
 
-	redhatcopv1alpha1 "github.com/redhat-cop/egressip-ipam-operator/pkg/apis/redhatcop/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
@@ -58,17 +57,19 @@ func (e *enqueForSelectedEgressIPAMNamespace) Generic(evt event.GenericEvent, q 
 	return
 }
 
-func (r *ReconcileEgressIPAM) getReferringNamespaces(egressIPAM *redhatcopv1alpha1.EgressIPAM) (unassignedNamespaces []corev1.Namespace, assignedNamespaces []corev1.Namespace, err error) {
+func (r *ReconcileEgressIPAM) getReferringNamespaces(rc *reconcileContext) (referringNmespaces map[string]corev1.Namespace, unassignedNamespaces []corev1.Namespace, assignedNamespaces []corev1.Namespace, err error) {
 	namespaceList := &corev1.NamespaceList{}
 	err = r.GetClient().List(context.TODO(), namespaceList, &client.ListOptions{})
 	if err != nil {
 		log.Error(err, "unable to retrive all namespaces")
-		return []corev1.Namespace{}, []corev1.Namespace{}, err
+		return map[string]corev1.Namespace{}, []corev1.Namespace{}, []corev1.Namespace{}, err
 	}
+	referringNamespaces := map[string]corev1.Namespace{}
 	unassignedNamespaces = []corev1.Namespace{}
 	assignedNamespaces = []corev1.Namespace{}
 	for _, namespace := range namespaceList.Items {
-		if value, ok := namespace.GetAnnotations()[namespaceAnnotation]; ok && value == egressIPAM.GetName() {
+		if value, ok := namespace.GetAnnotations()[namespaceAnnotation]; ok && value == rc.egressIPAM.GetName() {
+			referringNamespaces[namespace.GetName()] = namespace
 			if _, ok := namespace.GetAnnotations()[namespaceAssociationAnnotation]; ok {
 				assignedNamespaces = append(assignedNamespaces, namespace)
 			} else {
@@ -78,62 +79,41 @@ func (r *ReconcileEgressIPAM) getReferringNamespaces(egressIPAM *redhatcopv1alph
 			continue
 		}
 	}
-	return unassignedNamespaces, assignedNamespaces, nil
+	return referringNamespaces, unassignedNamespaces, assignedNamespaces, nil
 }
 
 // returns a map if CIDRs and array of IPs CIDR are from the egressIPAM, IPs are currently assigned IPs.
 // IPs in an array are supposed to belong the the CIDR, but no check is currently in place to ensure it.
 // it expects that each namespace passed as parametr has exaclty the n IPs assigned where n is the number of CIDRs in egressIPAM
-func sortIPsByCIDR(assignedNamespaces []corev1.Namespace, egressIPAM *redhatcopv1alpha1.EgressIPAM) (map[string][]net.IP, error) {
-	IPsMatrix := [][]net.IP{}
+func sortIPsByCIDR(rc *reconcileContext) (map[string][]net.IP, error) {
 	IPsByCIDR := map[string][]net.IP{}
-	CIDRs := []*net.IPNet{}
-	for _, CIDRassigment := range egressIPAM.Spec.CIDRAssignments {
-		IPsMatrix = append(IPsMatrix, []net.IP{})
-		_, CIDR, err := net.ParseCIDR(CIDRassigment.CIDR)
-		if err != nil {
-			log.Error(err, "unable to parse ", "cidr", CIDRassigment.CIDR)
-			return map[string][]net.IP{}, err
-		}
-		CIDRs = append(CIDRs, CIDR)
+	for _, cidr := range rc.cIDRs {
+		IPsByCIDR[cidr] = []net.IP{}
 	}
-	for _, namespace := range assignedNamespaces {
+	for _, namespace := range rc.initiallyAssignedNamespaces {
 		if value, ok := namespace.GetAnnotations()[namespaceAssociationAnnotation]; ok {
 			ipstrings := strings.Split(value, ",")
-			for i := range IPsMatrix {
+			for i, cidr := range rc.cIDRs {
 				IP := net.ParseIP(ipstrings[i])
 				if IP == nil {
 					err := errors.New("unable to parse IP: " + ipstrings[i] + " in namespace: " + namespace.GetName())
-					log.Error(err, "unable to parse ", "IP", ipstrings[i], "for namespace", namespace.GetName)
+					log.Error(err, "unable to parse ", "IP", ipstrings[i], "for namespace", namespace.GetName())
 					return map[string][]net.IP{}, err
 				}
-				if !CIDRs[i].Contains(IP) {
-					err := errors.New("IP: " + IP.String() + " does not belong to CIDR: " + CIDRs[i].String() + " for namespace" + namespace.GetName())
-					log.Error(err, "assigned ", "IP", ipstrings[i], "does not belong to CIDR", CIDRs[i], "for namespace", namespace.GetName)
+				if !rc.netCIDRByCIDR[cidr].Contains(IP) {
+					err := errors.New("IP: " + IP.String() + " does not belong to CIDR: " + cidr + " for namespace" + namespace.GetName())
+					log.Error(err, "assigned ", "IP", IP.String(), "does not belong to CIDR", cidr, "for namespace", namespace.GetName())
 					return map[string][]net.IP{}, err
 				}
-				IPsMatrix[i] = append(IPsMatrix[i], IP)
+				IPsByCIDR[cidr] = append(IPsByCIDR[cidr], IP)
 			}
 		}
-	}
-	for i, cidrAssignment := range egressIPAM.Spec.CIDRAssignments {
-		_, network, err := net.ParseCIDR(cidrAssignment.CIDR)
-		if err != nil {
-			log.Error(err, "unable to parse ", "cidr", cidrAssignment.CIDR)
-			return map[string][]net.IP{}, err
-		}
-		IPsByCIDR[network.String()] = IPsMatrix[i]
 	}
 	return IPsByCIDR, nil
 }
 
-func (r *ReconcileEgressIPAM) removeNamespaceAssignedIPs(egressIPAM *redhatcopv1alpha1.EgressIPAM) error {
-	_, assignedNamespaces, err := r.getReferringNamespaces(egressIPAM)
-	if err != nil {
-		log.Error(err, "unable to retrieve refrerring namespaces for ", "egressIPAM", egressIPAM)
-		return err
-	}
-	for _, namespace := range assignedNamespaces {
+func (r *ReconcileEgressIPAM) removeNamespaceAssignedIPs(rc *reconcileContext) error {
+	for _, namespace := range rc.initiallyAssignedNamespaces {
 		delete(namespace.GetAnnotations(), namespaceAssociationAnnotation)
 		err := r.GetClient().Update(context.TODO(), &namespace, &client.UpdateOptions{})
 		if err != nil {
@@ -142,4 +122,20 @@ func (r *ReconcileEgressIPAM) removeNamespaceAssignedIPs(egressIPAM *redhatcopv1
 		}
 	}
 	return nil
+}
+
+func getNamespaceMapKeys(namespaces map[string]corev1.Namespace) []string {
+	namespaceNames := []string{}
+	for namespace := range namespaces {
+		namespaceNames = append(namespaceNames, namespace)
+	}
+	return namespaceNames
+}
+
+func getNamespaceNames(namespaces []corev1.Namespace) []string {
+	namespaceNames := []string{}
+	for _, namespace := range namespaces {
+		namespaceNames = append(namespaceNames, namespace.GetName())
+	}
+	return namespaceNames
 }

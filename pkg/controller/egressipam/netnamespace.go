@@ -96,19 +96,14 @@ func (r *ReconcileEgressIPAM) getNamespace(netnamespace *ocpnetv1.NetNamespace) 
 	return *namespace, nil
 }
 
-func (r *ReconcileEgressIPAM) reconcileNetNamespaces(assignedNamespaces []corev1.Namespace) error {
-	for _, namespace := range assignedNamespaces {
-		ipstring, ok := namespace.GetAnnotations()[namespaceAssociationAnnotation]
+func (r *ReconcileEgressIPAM) reconcileNetNamespaces(rc *reconcileContext) error {
+	for _, namespace := range rc.finallyAssignedNamespaces {
+		ipstring, ok := namespace.Annotations[namespaceAssociationAnnotation]
 		if !ok {
 			return errors.New("namespace " + namespace.GetName() + " doesn't have required annotation: " + namespaceAssociationAnnotation)
 		}
 		IPs := strings.Split(ipstring, ",")
-		netnamespace := ocpnetv1.NetNamespace{}
-		err := r.GetClient().Get(context.TODO(), types.NamespacedName{Name: namespace.GetName()}, &netnamespace)
-		if err != nil {
-			log.Error(err, "unable to retrieve the netnamespace for", "namespace", namespace)
-			return err
-		}
+		netnamespace := rc.netNamespaces[namespace.GetName()]
 		if !reflect.DeepEqual(netnamespace.EgressIPs, IPs) {
 			netnamespace.EgressIPs = IPs
 			err := r.GetClient().Update(context.TODO(), &netnamespace, &client.UpdateOptions{})
@@ -119,4 +114,26 @@ func (r *ReconcileEgressIPAM) reconcileNetNamespaces(assignedNamespaces []corev1
 		}
 	}
 	return nil
+}
+
+func (r *ReconcileEgressIPAM) getAllNetNamespaces(rc *reconcileContext) (map[string]ocpnetv1.NetNamespace, error) {
+	netnamespaceList := &ocpnetv1.NetNamespaceList{}
+	err := r.GetClient().List(context.TODO(), netnamespaceList, &client.ListOptions{})
+	if err != nil {
+		log.Error(err, "unable to list all netnamespaces")
+		return map[string]ocpnetv1.NetNamespace{}, err
+	}
+	netnamespaces := map[string]ocpnetv1.NetNamespace{}
+	for _, netnamespace := range netnamespaceList.Items {
+		netnamespaces[netnamespace.GetName()] = netnamespace
+	}
+	return netnamespaces, nil
+}
+
+func getNetNamespaceMapKeys(netNamespaces map[string]ocpnetv1.NetNamespace) []string {
+	netNamespaceNames := []string{}
+	for netNamespace := range netNamespaces {
+		netNamespaceNames = append(netNamespaceNames, netNamespace)
+	}
+	return netNamespaceNames
 }
