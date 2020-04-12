@@ -8,6 +8,7 @@ import (
 	"reflect"
 
 	"github.com/aws/aws-sdk-go/service/ec2"
+	multierror "github.com/hashicorp/go-multierror"
 	ocpconfigv1 "github.com/openshift/api/config/v1"
 	ocpnetv1 "github.com/openshift/api/network/v1"
 	"github.com/operator-framework/operator-sdk/pkg/k8sutil"
@@ -640,12 +641,88 @@ func (r *ReconcileEgressIPAM) loadReconcileContext(egressIPAM *redhatcopv1alpha1
 	log.V(1).Info("", "reservedIPsByCIDR", rc.reservedIPsByCIDR)
 	log.V(1).Info("", "netCIDRByCIDR", rc.netCIDRByCIDR)
 
-	allNodes, err := r.getAllNodes(rc)
+	results := make(chan error)
+	//defer close(results)
+	// nodes
+	go func() {
+		allNodes, err := r.getAllNodes(rc)
+		if err != nil {
+			log.Error(err, "unable to get all nodes")
+			results <- err
+			return
+		}
+		rc.allNodes = allNodes
+		results <- nil
+		return
+	}()
+
+	//hostsubnets
+	go func() {
+		allHostSubnets, err := r.getAllHostSubnets(rc)
+		if err != nil {
+			log.Error(err, "unable to get all hostsubnets")
+			results <- err
+			return
+		}
+		rc.allHostSubnets = allHostSubnets
+		results <- nil
+		return
+	}()
+
+	//namespaces
+	go func() {
+		referringNamespaces, unAssignedNamespaces, assignedNamespaces, err := r.getReferringNamespaces(rc)
+		if err != nil {
+			log.Error(err, "unable to determine referring namespace for", "EgressIPAM", egressIPAM.GetName())
+			results <- err
+			return
+		}
+
+		rc.referringNamespaces = referringNamespaces
+		rc.initiallyAssignedNamespaces = assignedNamespaces
+		rc.unAssignedNamespaces = unAssignedNamespaces
+
+		log.V(1).Info("", "referringNamespaces", getNamespaceMapKeys(rc.referringNamespaces))
+		log.V(1).Info("", "initiallyAssignedNamespaces", getNamespaceNames(rc.initiallyAssignedNamespaces))
+		log.V(1).Info("", "unAssignedNamespaces", getNamespaceNames(rc.unAssignedNamespaces))
+		results <- nil
+		return
+	}()
+
+	//netnamespace
+	go func() {
+		netNamespaces, err := r.getAllNetNamespaces(rc)
+		if err != nil {
+			log.Error(err, "unable to load netnamespaces")
+			results <- err
+			return
+		}
+
+		rc.netNamespaces = netNamespaces
+
+		log.V(1).Info("", "netNamespaces", getNetNamespaceMapKeys(rc.netNamespaces))
+		results <- nil
+		return
+	}()
+
+	infrastrcuture, err := r.getInfrastructure()
 	if err != nil {
-		log.Error(err, "unable to get all nodes")
+		log.Error(err, "unable to retrieve cluster infrastrcuture information")
 		return &reconcileContext{}, err
 	}
-	rc.allNodes = allNodes
+
+	//collect results
+	var result *multierror.Error
+	for range []string{"nodes", "hostsubnets", "namespaces", "netnamespaces"} {
+		err := <-results
+		log.V(1).Info("receiving", "error", err)
+		multierror.Append(result, err)
+	}
+
+	if result.ErrorOrNil() != nil {
+		log.Error(result, "unable ro run parallel initialization")
+		return &reconcileContext{}, result
+	}
 
 	selectedNodes, err := r.getSelectedNodes(rc)
 	if err != nil {
@@ -655,16 +732,9 @@ func (r *ReconcileEgressIPAM) loadReconcileContext(egressIPAM *redhatcopv1alpha1
 	rc.selectedNodes = selectedNodes
 	log.V(1).Info("", "selectedNodes", getNodeNames(rc.selectedNodes))
 
-	allHostSubnets, err := r.getAllHostSubnets(rc)
-	if err != nil {
-		log.Error(err, "unable to get all hostsubnets")
-		return &reconcileContext{}, err
-	}
-	rc.allHostSubnets = allHostSubnets
-
 	selectedHostSubnets := map[string]ocpnetv1.HostSubnet{}
-	for hostsubnetname, hostsubnet := range allHostSubnets {
-		if _, ok := selectedNodes[hostsubnetname]; ok {
+	for hostsubnetname, hostsubnet := range rc.allHostSubnets {
+		if _, ok := rc.selectedNodes[hostsubnetname]; ok {
 			selectedHostSubnets[hostsubnetname] = hostsubnet
 		}
 	}
@@ -688,36 +758,7 @@ func (r *ReconcileEgressIPAM) loadReconcileContext(egressIPAM *redhatcopv1alpha1
 	log.V(1).Info("", "selectedNodesByCIDR", rc.selectedNodesByCIDR)
 	log.V(1).Info("", "selectedHostSubnetByCIDR", rc.selectedHostSubnetsByCIDR)
 
-	referringNamespaces, unAssignedNamespaces, assignedNamespaces, err := r.getReferringNamespaces(rc)
-	if err != nil {
-		log.Error(err, "unable to determine referring namespace for", "EgressIPAM", egressIPAM.GetName())
-		return &reconcileContext{}, err
-	}
-
-	rc.referringNamespaces = referringNamespaces
-	rc.initiallyAssignedNamespaces = assignedNamespaces
-	rc.unAssignedNamespaces = unAssignedNamespaces
-
-	log.V(1).Info("", "referringNamespaces", getNamespaceMapKeys(rc.referringNamespaces))
-	log.V(1).Info("", "initiallyAssignedNamespaces", getNamespaceNames(rc.initiallyAssignedNamespaces))
-	log.V(1).Info("", "unAssignedNamespaces", getNamespaceNames(rc.unAssignedNamespaces))
-
-	netNamespaces, err := r.getAllNetNamespaces(rc)
-	if err != nil {
-		log.Error(err, "unable to load netnamespaces")
-		return &reconcileContext{}, err
-	}
-
-	rc.netNamespaces = netNamespaces
-
-	log.V(1).Info("", "netNamespaces", getNetNamespaceMapKeys(rc.netNamespaces))
-
-	infrastrcuture, err := r.getInfrastructure()
-	if err != nil {
-		log.Error(err, "unable to retrieve cluster infrastrcuture information")
-		return &reconcileContext{}, err
-	}
-
+	//aws
 	if infrastrcuture.Status.Platform == ocpconfigv1.AWSPlatformType {
 		client, err := r.getAWSClient()
 		if err != nil {
