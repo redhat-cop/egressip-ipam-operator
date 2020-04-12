@@ -32,6 +32,6 @@ delete_namespaces () {
 if [ "create" == $1 ]; then
   create_namespaces $2
 fi
-if [ "delete" == $1 ] then
+if [ "delete" == $1 ]; then
   delete_namespaces $2
 fi    

@@ -6,6 +6,7 @@ import (
 	"net"
 	"strings"
 
+	multierror "github.com/hashicorp/go-multierror"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
@@ -113,15 +114,27 @@ func sortIPsByCIDR(rc *reconcileContext) (map[string][]net.IP, error) {
 }
 
 func (r *ReconcileEgressIPAM) removeNamespaceAssignedIPs(rc *reconcileContext) error {
+	results := make(chan error)
+	defer close(results)
 	for _, namespace := range rc.initiallyAssignedNamespaces {
-		delete(namespace.GetAnnotations(), namespaceAssociationAnnotation)
-		err := r.GetClient().Update(context.TODO(), &namespace, &client.UpdateOptions{})
-		if err != nil {
-			log.Error(err, "unable to update ", "namespace", namespace)
-			return err
-		}
+		namespacec := namespace.DeepCopy()
+		go func() {
+			delete(namespacec.GetAnnotations(), namespaceAssociationAnnotation)
+			err := r.GetClient().Update(context.TODO(), &namespace, &client.UpdateOptions{})
+			if err != nil {
+				log.Error(err, "unable to update ", "namespace", namespace)
+				results <- err
+				return
+			}
+			results <- nil
+			return
+		}()
 	}
-	return nil
+	var result *multierror.Error
+	for range rc.initiallyAssignedNamespaces {
+		multierror.Append(result, <-results)
+	}
+	return result.ErrorOrNil()
 }
 
 func getNamespaceMapKeys(namespaces map[string]corev1.Namespace) []string {

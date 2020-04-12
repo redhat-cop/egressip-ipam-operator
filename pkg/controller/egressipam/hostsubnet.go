@@ -5,6 +5,7 @@ import (
 	"net"
 	"reflect"
 
+	multierror "github.com/hashicorp/go-multierror"
 	ocpnetv1 "github.com/openshift/api/network/v1"
 	redhatcopv1alpha1 "github.com/redhat-cop/egressip-ipam-operator/pkg/apis/redhatcop/v1alpha1"
 	"github.com/scylladb/go-set/strset"
@@ -105,17 +106,30 @@ func (e *enqueForSelectingEgressIPAMHostSubnet) Generic(evt event.GenericEvent, 
 
 // ensures that hostsubntes have the correct egressIPs
 func (r *ReconcileEgressIPAM) reconcileHSAssignedIPs(rc *reconcileContext) error {
+	results := make(chan error)
+	defer close(results)
 	for hostsubnetname, hostsubnet := range rc.selectedHostSubnets {
-		if !strset.New(rc.finallyAssignedIPsByNode[hostsubnetname]...).IsEqual(strset.New(hostsubnet.EgressIPs...)) {
-			hostsubnet.EgressIPs = rc.finallyAssignedIPsByNode[hostsubnetname]
-			err := r.GetClient().Update(context.TODO(), &hostsubnet, &client.UpdateOptions{})
-			if err != nil {
-				log.Error(err, "unable to update", "hostsubnet ", hostsubnet, "with ips", rc.finallyAssignedIPsByNode[hostsubnetname])
-				return err
+		hostsubnetnamec := hostsubnetname
+		hostsubnetc := hostsubnet.DeepCopy()
+		go func() {
+			if !strset.New(rc.finallyAssignedIPsByNode[hostsubnetnamec]...).IsEqual(strset.New(hostsubnetc.EgressIPs...)) {
+				hostsubnetc.EgressIPs = rc.finallyAssignedIPsByNode[hostsubnetnamec]
+				err := r.GetClient().Update(context.TODO(), hostsubnetc, &client.UpdateOptions{})
+				if err != nil {
+					log.Error(err, "unable to update", "hostsubnet ", hostsubnetc, "with ips", rc.finallyAssignedIPsByNode[hostsubnetnamec])
+					results <- err
+					return
+				}
 			}
-		}
+			results <- nil
+			return
+		}()
 	}
-	return nil
+	var result *multierror.Error
+	for range rc.selectedHostSubnets {
+		multierror.Append(result, <-results)
+	}
+	return result.ErrorOrNil()
 }
 
 // ensures that hostsubnets have the correct CIDR
@@ -152,18 +166,30 @@ func (r *ReconcileEgressIPAM) getAllHostSubnets(thiscontext *reconcileContext) (
 }
 
 func (r *ReconcileEgressIPAM) removeHostsubnetAssignedIPsAndCIDRs(rc *reconcileContext) error {
+	results := make(chan error)
+	defer close(results)
 	for _, hostsubnet := range rc.selectedHostSubnets {
-		if !reflect.DeepEqual(hostsubnet.EgressCIDRs, []string{}) || !reflect.DeepEqual(hostsubnet.EgressIPs, []string{}) {
-			hostsubnet.EgressCIDRs = []string{}
-			hostsubnet.EgressIPs = []string{}
-			err := r.GetClient().Update(context.TODO(), &hostsubnet, &client.UpdateOptions{})
-			if err != nil {
-				log.Error(err, "unable to upadate ", "hostsubnet", hostsubnet)
-				return err
+		hostsubnetc := hostsubnet.DeepCopy()
+		go func() {
+			if !reflect.DeepEqual(hostsubnetc.EgressCIDRs, []string{}) || !reflect.DeepEqual(hostsubnetc.EgressIPs, []string{}) {
+				hostsubnetc.EgressCIDRs = []string{}
+				hostsubnetc.EgressIPs = []string{}
+				err := r.GetClient().Update(context.TODO(), hostsubnetc, &client.UpdateOptions{})
+				if err != nil {
+					log.Error(err, "unable to upadate ", "hostsubnet", hostsubnetc.GetName())
+					results <- err
+					return
+				}
 			}
-		}
+			results <- nil
+			return
+		}()
 	}
-	return nil
+	var result *multierror.Error
+	for range rc.selectedHostSubnets {
+		multierror.Append(result, <-results)
+	}
+	return result.ErrorOrNil()
 }
 
 func getHostSubnetNames(hostSubnets map[string]ocpnetv1.HostSubnet) []string {

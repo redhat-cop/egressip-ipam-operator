@@ -274,7 +274,7 @@ func (r *ReconcileEgressIPAM) Reconcile(request reconcile.Request) (reconcile.Re
 	if ok := r.IsInitialized(instance); !ok {
 		err := r.GetClient().Update(context.TODO(), instance)
 		if err != nil {
-			log.Error(err, "unable to update instance", "instance", instance)
+			log.Error(err, "unable to update instance", "instance", instance.GetName())
 			return r.ManageError(instance, err)
 		}
 		return reconcile.Result{}, nil
@@ -286,13 +286,13 @@ func (r *ReconcileEgressIPAM) Reconcile(request reconcile.Request) (reconcile.Re
 		}
 		err := r.manageCleanUpLogic(instance)
 		if err != nil {
-			log.Error(err, "unable to delete instance", "instance", instance)
+			log.Error(err, "unable to delete instance", "instance", instance.GetName())
 			return r.ManageError(instance, err)
 		}
 		util.RemoveFinalizer(instance, controllerName)
 		err = r.GetClient().Update(context.TODO(), instance)
 		if err != nil {
-			log.Error(err, "unable to update instance", "instance", instance)
+			log.Error(err, "unable to update instance", "instance", instance.GetName())
 			return r.ManageError(instance, err)
 		}
 		return reconcile.Result{}, nil
@@ -300,7 +300,7 @@ func (r *ReconcileEgressIPAM) Reconcile(request reconcile.Request) (reconcile.Re
 	// load the reconcile context
 	rc, err := r.loadReconcileContext(instance)
 	if err != nil {
-		log.Error(err, "unable to load the reconcile context", "instance", instance)
+		log.Error(err, "unable to load the reconcile context", "instance", instance.GetName())
 		return r.ManageError(instance, err)
 	}
 
@@ -374,12 +374,6 @@ func (r *ReconcileEgressIPAM) Reconcile(request reconcile.Request) (reconcile.Re
 	// 7. reconcile assigned IP to nodes with correcponing hostsubnet
 
 	if infrastrcuture.Status.Platform == ocpconfigv1.AWSPlatformType {
-		client, err := r.getAWSClient()
-		if err != nil {
-			log.Error(err, "unable to get initialize AWS client")
-			return r.ManageError(instance, err)
-		}
-		rc.awsClient = client
 
 		assignedIPsByNode := r.getAssignedIPsByNode(rc)
 		rc.initiallyAssignedIPsByNode = assignedIPsByNode
@@ -530,14 +524,21 @@ func (r *ReconcileEgressIPAM) manageCleanUpLogic(instance *redhatcopv1alpha1.Egr
 	// remove assigned IPs from namespaces
 	err = r.removeNamespaceAssignedIPs(rc)
 	if err != nil {
-		log.Error(err, "unable to remove IPs assigned to namespaces referring to ", "egressIPAM", rc.egressIPAM)
+		log.Error(err, "unable to remove IPs assigned to namespaces referring to ", "egressIPAM", rc.egressIPAM.GetName())
+		return err
+	}
+
+	// remove assigned IPs from netnamespaces
+	err = r.removeNetnamespaceAssignedIPs(rc)
+	if err != nil {
+		log.Error(err, "unable to remove IPs assigned to netnamespaces referring to ", "egressIPAM", rc.egressIPAM.GetName())
 		return err
 	}
 
 	// remove all assigned IPs/CIDRs from hostsubnets
 	err = r.removeHostsubnetAssignedIPsAndCIDRs(rc)
 	if err != nil {
-		log.Error(err, "unable to remove IPs/CIDRs assigned to hostsubnets selected by ", "egressIPAM", rc.egressIPAM)
+		log.Error(err, "unable to remove IPs/CIDRs assigned to hostsubnets selected by ", "egressIPAM", rc.egressIPAM.GetName())
 		return err
 	}
 
@@ -583,7 +584,8 @@ type reconcileContext struct {
 	initiallyAssignedIPsByNode  map[string][]string
 
 	//aws specific
-	awsClient *ec2.EC2
+	awsClient            *ec2.EC2
+	selectedAWSInstances map[string]*ec2.Instance
 
 	//variable fields
 	finallyAssignedNamespaces []corev1.Namespace
@@ -639,7 +641,7 @@ func (r *ReconcileEgressIPAM) loadReconcileContext(egressIPAM *redhatcopv1alpha1
 
 	selectedNodes, err := r.getSelectedNodes(rc)
 	if err != nil {
-		log.Error(err, "unable to get selected nodes for", "EgressIPAM", egressIPAM)
+		log.Error(err, "unable to get selected nodes for", "EgressIPAM", egressIPAM.GetName())
 		return &reconcileContext{}, err
 	}
 	rc.selectedNodes = selectedNodes
@@ -680,7 +682,7 @@ func (r *ReconcileEgressIPAM) loadReconcileContext(egressIPAM *redhatcopv1alpha1
 
 	referringNamespaces, unAssignedNamespaces, assignedNamespaces, err := r.getReferringNamespaces(rc)
 	if err != nil {
-		log.Error(err, "unable to determine referring namespace for", "EgressIPAM", egressIPAM)
+		log.Error(err, "unable to determine referring namespace for", "EgressIPAM", egressIPAM.GetName())
 		return &reconcileContext{}, err
 	}
 
@@ -701,6 +703,31 @@ func (r *ReconcileEgressIPAM) loadReconcileContext(egressIPAM *redhatcopv1alpha1
 	rc.netNamespaces = netNamespaces
 
 	log.V(1).Info("", "netNamespaces", getNetNamespaceMapKeys(rc.netNamespaces))
+
+	infrastrcuture, err := r.getInfrastructure()
+	if err != nil {
+		log.Error(err, "unable to retrieve cluster infrastrcuture information")
+		return &reconcileContext{}, err
+	}
+
+	if infrastrcuture.Status.Platform == ocpconfigv1.AWSPlatformType {
+		client, err := r.getAWSClient()
+		if err != nil {
+			log.Error(err, "unable to get initialize AWS client")
+			return &reconcileContext{}, err
+		}
+		rc.awsClient = client
+
+		selectedAWSInstances, err := getAWSIstances(rc.awsClient, rc.selectedNodes)
+		if err != nil {
+			log.Error(err, "unable to get selected AWS Instances")
+			return &reconcileContext{}, err
+		}
+		rc.selectedAWSInstances = selectedAWSInstances
+
+		log.V(1).Info("", "selectedAWSInstances", getAWSIstancesMapKeys(rc.selectedAWSInstances))
+
+	}
 
 	return rc, nil
 }
