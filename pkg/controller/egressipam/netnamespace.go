@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 
+	multierror "github.com/hashicorp/go-multierror"
 	ocpnetv1 "github.com/openshift/api/network/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -96,27 +97,116 @@ func (r *ReconcileEgressIPAM) getNamespace(netnamespace *ocpnetv1.NetNamespace) 
 	return *namespace, nil
 }
 
-func (r *ReconcileEgressIPAM) reconcileNetNamespaces(assignedNamespaces []corev1.Namespace) error {
-	for _, namespace := range assignedNamespaces {
-		ipstring, ok := namespace.GetAnnotations()[namespaceAssociationAnnotation]
-		if !ok {
-			return errors.New("namespace " + namespace.GetName() + " doesn't have required annotation: " + namespaceAssociationAnnotation)
-		}
-		IPs := strings.Split(ipstring, ",")
-		netnamespace := ocpnetv1.NetNamespace{}
-		err := r.GetClient().Get(context.TODO(), types.NamespacedName{Name: namespace.GetName()}, &netnamespace)
+func (r *ReconcileEgressIPAM) reconcileNetNamespaces(rc *reconcileContext) error {
+	results := make(chan error)
+	defer close(results)
+	for _, namespace := range rc.finallyAssignedNamespaces {
+		namespacec := namespace.DeepCopy()
+		go func() {
+			ipstring, ok := namespacec.Annotations[namespaceAssociationAnnotation]
+			if !ok {
+				results <- errors.New("namespace " + namespacec.GetName() + " doesn't have required annotation: " + namespaceAssociationAnnotation)
+				return
+			}
+			IPs := strings.Split(ipstring, ",")
+			netnamespace := rc.netNamespaces[namespacec.GetName()]
+			if !reflect.DeepEqual(netnamespace.EgressIPs, IPs) {
+				netnamespace.EgressIPs = IPs
+				err := r.GetClient().Update(context.TODO(), &netnamespace, &client.UpdateOptions{})
+				if err != nil {
+					log.Error(err, "unable to update ", "netnamespace", netnamespace.GetName())
+					results <- err
+					return
+				}
+			}
+			results <- nil
+			return
+		}()
+	}
+	var result *multierror.Error
+	for range rc.finallyAssignedNamespaces {
+		multierror.Append(result, <-results)
+	}
+	return result.ErrorOrNil()
+}
+
+func (r *ReconcileEgressIPAM) cleanUpNamespaceAndNetNamespace(namespaceName string) error {
+	netNamespace := &ocpnetv1.NetNamespace{}
+	err := r.GetClient().Get(context.TODO(), types.NamespacedName{Name: namespaceName}, netNamespace)
+	if err != nil {
+		log.Error(err, "unable to retrieve", "netnamespace", namespaceName)
+		return err
+	}
+	if !reflect.DeepEqual(netNamespace.EgressIPs, []string{}) {
+		netNamespace.EgressIPs = []string{}
+		err := r.GetClient().Update(context.TODO(), netNamespace, &client.UpdateOptions{})
 		if err != nil {
-			log.Error(err, "unable to retrieve the netnamespace for", "namespace", namespace)
+			log.Error(err, "unable to update ", "netnamespace", netNamespace.GetName())
 			return err
 		}
-		if !reflect.DeepEqual(netnamespace.EgressIPs, IPs) {
-			netnamespace.EgressIPs = IPs
-			err := r.GetClient().Update(context.TODO(), &netnamespace, &client.UpdateOptions{})
-			if err != nil {
-				log.Error(err, "unable to update ", "netnamespace", netnamespace)
-				return err
-			}
+	}
+	namespace := &corev1.Namespace{}
+	err = r.GetClient().Get(context.TODO(), types.NamespacedName{Name: namespaceName}, namespace)
+	if err != nil {
+		log.Error(err, "unable to retrieve", "namespace", namespaceName)
+		return err
+	}
+	if _, ok := namespace.GetAnnotations()[namespaceAssociationAnnotation]; ok {
+		delete(namespace.Annotations, namespaceAssociationAnnotation)
+		err := r.GetClient().Update(context.TODO(), namespace, &client.UpdateOptions{})
+		if err != nil {
+			log.Error(err, "unable to update ", "namespace", namespace.GetName())
+			return err
 		}
 	}
 	return nil
+}
+
+func (r *ReconcileEgressIPAM) removeNetnamespaceAssignedIPs(rc *reconcileContext) error {
+	results := make(chan error)
+	defer close(results)
+	for _, namespace := range rc.referringNamespaces {
+		namespacec := namespace.DeepCopy()
+		go func() {
+			netnamespace := rc.netNamespaces[namespacec.GetName()]
+			if !reflect.DeepEqual(netnamespace.EgressIPs, []string{}) {
+				netnamespace.EgressIPs = []string{}
+				err := r.GetClient().Update(context.TODO(), &netnamespace, &client.UpdateOptions{})
+				if err != nil {
+					log.Error(err, "unable to update ", "netnamespace", netnamespace.GetName())
+					results <- err
+					return
+				}
+			}
+			results <- nil
+			return
+		}()
+	}
+	var result *multierror.Error
+	for range rc.finallyAssignedNamespaces {
+		multierror.Append(result, <-results)
+	}
+	return result.ErrorOrNil()
+}
+
+func (r *ReconcileEgressIPAM) getAllNetNamespaces(rc *reconcileContext) (map[string]ocpnetv1.NetNamespace, error) {
+	netnamespaceList := &ocpnetv1.NetNamespaceList{}
+	err := r.GetClient().List(context.TODO(), netnamespaceList, &client.ListOptions{})
+	if err != nil {
+		log.Error(err, "unable to list all netnamespaces")
+		return map[string]ocpnetv1.NetNamespace{}, err
+	}
+	netnamespaces := map[string]ocpnetv1.NetNamespace{}
+	for _, netnamespace := range netnamespaceList.Items {
+		netnamespaces[netnamespace.GetName()] = netnamespace
+	}
+	return netnamespaces, nil
+}
+
+func getNetNamespaceMapKeys(netNamespaces map[string]ocpnetv1.NetNamespace) []string {
+	netNamespaceNames := []string{}
+	for netNamespace := range netNamespaces {
+		netNamespaceNames = append(netNamespaceNames, netNamespace)
+	}
+	return netNamespaceNames
 }

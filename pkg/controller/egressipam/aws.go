@@ -8,8 +8,8 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
+	multierror "github.com/hashicorp/go-multierror"
 	cloudcredentialv1 "github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1"
-	redhatcopv1alpha1 "github.com/redhat-cop/egressip-ipam-operator/pkg/apis/redhatcop/v1alpha1"
 	"github.com/scylladb/go-set/strset"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -32,18 +32,34 @@ func (r *ReconcileEgressIPAM) getAWSClient() (*ec2.EC2, error) {
 	return client, nil
 }
 
-func getAWSInstance(client *ec2.EC2, node corev1.Node) (*ec2.Instance, error) {
+func getAWSIstances(client *ec2.EC2, nodes map[string]corev1.Node) (map[string]*ec2.Instance, error) {
+	instanceIds := []*string{}
+	for _, node := range nodes {
+		instanceIds = append(instanceIds, aws.String(getAWSIDFromProviderID(node.Spec.ProviderID)))
+	}
 	input := &ec2.DescribeInstancesInput{
-		InstanceIds: []*string{
-			aws.String(getAWSIDFromProviderID(node.Spec.ProviderID)),
-		},
+		InstanceIds: instanceIds,
 	}
 	result, err := client.DescribeInstances(input)
 	if err != nil {
-		log.Error(err, "unable to get aws ", "instance", getAWSIDFromProviderID(node.Spec.ProviderID))
-		return &ec2.Instance{}, err
+		log.Error(err, "unable to get aws ", "instances", instanceIds)
+		return map[string]*ec2.Instance{}, err
 	}
-	return result.Reservations[0].Instances[0], nil
+	instances := map[string]*ec2.Instance{}
+	for _, reservation := range result.Reservations {
+		for _, instance := range reservation.Instances {
+			instances[*instance.InstanceId] = instance
+		}
+	}
+	return instances, nil
+}
+
+func getAWSIstancesMapKeys(instances map[string]*ec2.Instance) []string {
+	instanceIDs := []string{}
+	for id := range instances {
+		instanceIDs = append(instanceIDs, id)
+	}
+	return instanceIDs
 }
 
 func getAWSIDFromProviderID(providerID string) string {
@@ -51,79 +67,101 @@ func getAWSIDFromProviderID(providerID string) string {
 	return strs[len(strs)-1]
 }
 
-// removes AWS secondary IPs that are currently assigned but not needed
-func (r *ReconcileEgressIPAM) removeAWSUnusedIPs(client *ec2.EC2, nodeMap map[string]corev1.Node, assignedIPsByNode map[string][]string) error {
-	for node, _ := range nodeMap {
-		instance, err := getAWSInstance(client, nodeMap[node])
-		if err != nil {
-			log.Error(err, "unable to get aws instance for", "node", node)
-			return err
-		}
-		awsAssignedIPs := []string{}
-		for _, ipipas := range instance.NetworkInterfaces[0].PrivateIpAddresses {
-			if !(*ipipas.Primary) {
-				awsAssignedIPs = append(awsAssignedIPs, *ipipas.PrivateIpAddress)
-			}
-		}
-		toBeRemovedIPs := strset.Difference(strset.New(awsAssignedIPs...), strset.New(assignedIPsByNode[node]...)).List()
-		if len(toBeRemovedIPs) > 0 {
-			log.Info("vm", "instance ", instance.InstanceId, " will be freed from IPs ", toBeRemovedIPs)
-			toBeRemovedIPsAWSStr := []*string{}
-			for _, ip := range toBeRemovedIPs {
-				copyip := ip
-				toBeRemovedIPsAWSStr = append(toBeRemovedIPsAWSStr, &copyip)
-			}
+func getAWSIDFromNode(node corev1.Node) string {
+	return getAWSIDFromProviderID(node.Spec.ProviderID)
+}
 
-			input := &ec2.UnassignPrivateIpAddressesInput{
-				NetworkInterfaceId: instance.NetworkInterfaces[0].NetworkInterfaceId,
-				PrivateIpAddresses: toBeRemovedIPsAWSStr,
+// removes AWS secondary IPs that are currently assigned but not needed
+func (r *ReconcileEgressIPAM) removeAWSUnusedIPs(rc *reconcileContext) error {
+	results := make(chan error)
+	defer close(results)
+	for node, ips := range rc.finallyAssignedIPsByNode {
+		nodec := node
+		ipsc := ips
+		go func() {
+			instance := rc.selectedAWSInstances[getAWSIDFromNode(rc.allNodes[nodec])]
+			awsAssignedIPs := []string{}
+			for _, ipipas := range instance.NetworkInterfaces[0].PrivateIpAddresses {
+				if !(*ipipas.Primary) {
+					awsAssignedIPs = append(awsAssignedIPs, *ipipas.PrivateIpAddress)
+				}
 			}
-			_, err = client.UnassignPrivateIpAddresses(input)
-			if err != nil {
-				log.Error(err, "unable to remove IPs from ", "instance", instance.InstanceId)
-				return err
+			toBeRemovedIPs := strset.Difference(strset.New(awsAssignedIPs...), strset.New(ipsc...)).List()
+			if len(toBeRemovedIPs) > 0 {
+				log.Info("vm", "instance ", instance.InstanceId, " will be freed from IPs ", toBeRemovedIPs)
+				toBeRemovedIPsAWSStr := []*string{}
+				for _, ip := range toBeRemovedIPs {
+					copyip := ip
+					toBeRemovedIPsAWSStr = append(toBeRemovedIPsAWSStr, &copyip)
+				}
+
+				input := &ec2.UnassignPrivateIpAddressesInput{
+					NetworkInterfaceId: instance.NetworkInterfaces[0].NetworkInterfaceId,
+					PrivateIpAddresses: toBeRemovedIPsAWSStr,
+				}
+				_, err := rc.awsClient.UnassignPrivateIpAddresses(input)
+				if err != nil {
+					log.Error(err, "unable to remove IPs from ", "instance", instance.InstanceId)
+					results <- err
+					return
+				}
 			}
-		}
+			results <- nil
+			return
+		}()
+	}
+	var result *multierror.Error
+	for range rc.finallyAssignedIPsByNode {
+		multierror.Append(result, <-results)
 	}
 
-	return nil
+	return result.ErrorOrNil()
 }
 
 // assigns secondary IPs to AWS machines
-func (r *ReconcileEgressIPAM) reconcileAWSAssignedIPs(client *ec2.EC2, nodeMap map[string]corev1.Node, assignedIPsByNode map[string][]string) error {
-	for node, assidnedIPsToNode := range assignedIPsByNode {
-		instance, err := getAWSInstance(client, nodeMap[node])
-		if err != nil {
-			log.Error(err, "unable to get aws instance for", "node", node)
-			return err
-		}
-		awsAssignedIPs := []string{}
-		for _, ipipas := range instance.NetworkInterfaces[0].PrivateIpAddresses {
-			if !*ipipas.Primary {
-				awsAssignedIPs = append(awsAssignedIPs, *ipipas.PrivateIpAddress)
+func (r *ReconcileEgressIPAM) reconcileAWSAssignedIPs(rc *reconcileContext) error {
+	results := make(chan error)
+	defer close(results)
+	for node, assignedIPsToNode := range rc.finallyAssignedIPsByNode {
+		nodec := node
+		ipsc := assignedIPsToNode
+		go func() {
+			instance := rc.selectedAWSInstances[getAWSIDFromNode(rc.allNodes[nodec])]
+			awsAssignedIPs := []string{}
+			for _, ipipas := range instance.NetworkInterfaces[0].PrivateIpAddresses {
+				if !*ipipas.Primary {
+					awsAssignedIPs = append(awsAssignedIPs, *ipipas.PrivateIpAddress)
+				}
 			}
-		}
-		toBeAssignedIPs := strset.Difference(strset.New(assidnedIPsToNode...), strset.New(awsAssignedIPs...)).List()
-		if len(toBeAssignedIPs) > 0 {
-			log.Info("vm", "instance ", instance.InstanceId, " will be assigned IPs ", toBeAssignedIPs)
-			toBeAssignedIPsAWSStr := []*string{}
-			for _, ip := range toBeAssignedIPs {
-				copyip := ip
-				toBeAssignedIPsAWSStr = append(toBeAssignedIPsAWSStr, &copyip)
-			}
+			toBeAssignedIPs := strset.Difference(strset.New(ipsc...), strset.New(awsAssignedIPs...)).List()
+			if len(toBeAssignedIPs) > 0 {
+				log.Info("vm", "instance ", instance.InstanceId, " will be assigned IPs ", toBeAssignedIPs)
+				toBeAssignedIPsAWSStr := []*string{}
+				for _, ip := range toBeAssignedIPs {
+					copyip := ip
+					toBeAssignedIPsAWSStr = append(toBeAssignedIPsAWSStr, &copyip)
+				}
 
-			input := &ec2.AssignPrivateIpAddressesInput{
-				NetworkInterfaceId: instance.NetworkInterfaces[0].NetworkInterfaceId,
-				PrivateIpAddresses: toBeAssignedIPsAWSStr,
+				input := &ec2.AssignPrivateIpAddressesInput{
+					NetworkInterfaceId: instance.NetworkInterfaces[0].NetworkInterfaceId,
+					PrivateIpAddresses: toBeAssignedIPsAWSStr,
+				}
+				_, err := rc.awsClient.AssignPrivateIpAddresses(input)
+				if err != nil {
+					log.Error(err, "unable to assigne IPs to ", "instance", instance.InstanceId)
+					results <- err
+					return
+				}
 			}
-			_, err = client.AssignPrivateIpAddresses(input)
-			if err != nil {
-				log.Error(err, "unable to assigne IPs to ", "instance", instance.InstanceId)
-				return err
-			}
-		}
+			results <- nil
+			return
+		}()
 	}
-	return nil
+	var result *multierror.Error
+	for range rc.finallyAssignedIPsByNode {
+		multierror.Append(result, <-results)
+	}
+	return result.ErrorOrNil()
 }
 
 func (r *ReconcileEgressIPAM) createAWSCredentialRequest() error {
@@ -133,7 +171,7 @@ func (r *ReconcileEgressIPAM) createAWSCredentialRequest() error {
 			Kind:       "AWSProviderSpec",
 		},
 		StatementEntries: []cloudcredentialv1.StatementEntry{
-			cloudcredentialv1.StatementEntry{
+			{
 				Action: []string{
 					"ec2:DescribeInstances",
 					"ec2:UnassignPrivateIpAddresses",
@@ -207,30 +245,32 @@ func (r *ReconcileEgressIPAM) getAWSCredentials() (id string, key string, err er
 	return string(awsAccessKeyID), string(awsSecretAccessKey), nil
 }
 
-func (r *ReconcileEgressIPAM) removeAWSAssignedIPs(egressIPAM *redhatcopv1alpha1.EgressIPAM) error {
-	nodes, err := r.getSelectedNodes(egressIPAM)
-	if err != nil {
-		log.Error(err, "unable to get nodes selected by", "egressIPAM", egressIPAM)
-		return err
-	}
-	client, err := r.getAWSClient()
-	for _, node := range nodes {
-		instance, err := getAWSInstance(client, node)
-		if err != nil {
-			log.Error(err, "unable to get AWS instance from", "node", node.GetName())
-			return err
-		}
-		for _, secondaryIP := range instance.NetworkInterfaces[0].PrivateIpAddresses[1:] {
-			input := &ec2.UnassignPrivateIpAddressesInput{
-				NetworkInterfaceId: instance.NetworkInterfaces[0].NetworkInterfaceId,
-				PrivateIpAddresses: []*string{secondaryIP.PrivateIpAddress},
+func (r *ReconcileEgressIPAM) removeAWSAssignedIPs(rc *reconcileContext) error {
+	results := make(chan error)
+	defer close(results)
+	for _, node := range rc.selectedNodes {
+		nodec := node.DeepCopy()
+		go func() {
+			instance := rc.selectedAWSInstances[getAWSIDFromNode(*nodec)]
+			for _, secondaryIP := range instance.NetworkInterfaces[0].PrivateIpAddresses[1:] {
+				input := &ec2.UnassignPrivateIpAddressesInput{
+					NetworkInterfaceId: instance.NetworkInterfaces[0].NetworkInterfaceId,
+					PrivateIpAddresses: []*string{secondaryIP.PrivateIpAddress},
+				}
+				_, err := rc.awsClient.UnassignPrivateIpAddresses(input)
+				if err != nil {
+					log.Error(err, "unable to remove IPs from ", "instance", instance.InstanceId)
+					results <- err
+					return
+				}
 			}
-			_, err = client.UnassignPrivateIpAddresses(input)
-			if err != nil {
-				log.Error(err, "unable to remove IPs from ", "instance", instance.InstanceId)
-				return err
-			}
-		}
+			results <- nil
+			return
+		}()
 	}
-	return err
+	var result *multierror.Error
+	for range rc.selectedNodes {
+		multierror.Append(result, <-results)
+	}
+	return result.ErrorOrNil()
 }

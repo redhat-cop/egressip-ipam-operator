@@ -2,12 +2,13 @@ package egressipam
 
 import (
 	"context"
+	"net"
 	"reflect"
 
+	multierror "github.com/hashicorp/go-multierror"
 	ocpnetv1 "github.com/openshift/api/network/v1"
 	redhatcopv1alpha1 "github.com/redhat-cop/egressip-ipam-operator/pkg/apis/redhatcop/v1alpha1"
 	"github.com/scylladb/go-set/strset"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -19,16 +20,26 @@ type enqueForSelectingEgressIPAMHostSubnet struct {
 	r *ReconcileEgressIPAM
 }
 
-// trigger a egressIPAM reconcile event for those egressIPAM objcts that reference this hostsubnet indireclty via the corresponding node.
+// return whether this EgressIPAM macthes this hostSubnet and with which CIDR
+func matchesHostSubnet(egressIPAM *redhatcopv1alpha1.EgressIPAM, hostsubnet *ocpnetv1.HostSubnet) (bool, string) {
+	for _, cIDRAssignment := range egressIPAM.Spec.CIDRAssignments {
+		_, cidr, err := net.ParseCIDR(cIDRAssignment.CIDR)
+		if err != nil {
+			log.Error(err, "unable to parse ", "cidr", cidr)
+			return false, ""
+		}
+		if cidr.Contains(net.ParseIP(hostsubnet.HostIP)) {
+			return true, cIDRAssignment.CIDR
+		}
+	}
+	return false, ""
+}
+
+// trigger a egressIPAM reconcile event for those egressIPAM objects that reference this hostsubnet indireclty via the corresponding node.
 func (e *enqueForSelectingEgressIPAMHostSubnet) Create(evt event.CreateEvent, q workqueue.RateLimitingInterface) {
 	hostsubnet, ok := evt.Object.(*ocpnetv1.HostSubnet)
 	if !ok {
 		log.Info("unable convert event object to hostsubnet,", "event", evt)
-		return
-	}
-	node, err := e.r.getNode(hostsubnet)
-	if err != nil {
-		log.Error(err, "unable to get all retrieve node corresponding to", "hostsubnet", hostsubnet)
 		return
 	}
 	egressIPAMs, err := e.r.getAllEgressIPAM()
@@ -37,7 +48,7 @@ func (e *enqueForSelectingEgressIPAMHostSubnet) Create(evt event.CreateEvent, q 
 		return
 	}
 	for _, egressIPAM := range egressIPAMs {
-		if matches, _ := matchesNode(&egressIPAM, node); matches {
+		if matches, _ := matchesHostSubnet(&egressIPAM, hostsubnet); matches {
 			q.Add(reconcile.Request{NamespacedName: types.NamespacedName{
 				Name: egressIPAM.GetName(),
 			}})
@@ -53,18 +64,13 @@ func (e *enqueForSelectingEgressIPAMHostSubnet) Update(evt event.UpdateEvent, q 
 		log.Info("unable convert event object to hostsubnet,", "event", evt)
 		return
 	}
-	node, err := e.r.getNode(hostsubnet)
-	if err != nil {
-		log.Error(err, "unable to get all retrieve node corresponding to", "hostsubnet", hostsubnet)
-		return
-	}
 	egressIPAMs, err := e.r.getAllEgressIPAM()
 	if err != nil {
 		log.Error(err, "unable to get all EgressIPAM resources")
 		return
 	}
 	for _, egressIPAM := range egressIPAMs {
-		if matches, _ := matchesNode(&egressIPAM, node); matches {
+		if matches, _ := matchesHostSubnet(&egressIPAM, hostsubnet); matches {
 			q.Add(reconcile.Request{NamespacedName: types.NamespacedName{
 				Name: egressIPAM.GetName(),
 			}})
@@ -74,7 +80,23 @@ func (e *enqueForSelectingEgressIPAMHostSubnet) Update(evt event.UpdateEvent, q 
 
 // Delete implements EventHandler
 func (e *enqueForSelectingEgressIPAMHostSubnet) Delete(evt event.DeleteEvent, q workqueue.RateLimitingInterface) {
-	return
+	hostsubnet, ok := evt.Object.(*ocpnetv1.HostSubnet)
+	if !ok {
+		log.Info("unable convert event object to hostsubnet,", "event", evt)
+		return
+	}
+	egressIPAMs, err := e.r.getAllEgressIPAM()
+	if err != nil {
+		log.Error(err, "unable to get all EgressIPAM resources")
+		return
+	}
+	for _, egressIPAM := range egressIPAMs {
+		if matches, _ := matchesHostSubnet(&egressIPAM, hostsubnet); matches {
+			q.Add(reconcile.Request{NamespacedName: types.NamespacedName{
+				Name: egressIPAM.GetName(),
+			}})
+		}
+	}
 }
 
 // Generic implements EventHandler
@@ -83,53 +105,41 @@ func (e *enqueForSelectingEgressIPAMHostSubnet) Generic(evt event.GenericEvent, 
 }
 
 // ensures that hostsubntes have the correct egressIPs
-func (r *ReconcileEgressIPAM) reconcileHSAssignedIPs(nodeAssignedIPs map[string][]string, egressIPAM *redhatcopv1alpha1.EgressIPAM) error {
-	nodes, err := r.getSelectedNodes(egressIPAM)
-	if err != nil {
-		log.Error(err, "unable to get all selected nodes for ", "egressIPAM", egressIPAM)
-		return err
-	}
-	for _, node := range nodes {
-		hostsubnet, err := r.getHostSubnet(node.GetName())
-		if err != nil {
-			log.Error(err, "unable to lookup hostsubnet for ", "node", node.GetName)
-			return err
-		}
-		if !strset.New(nodeAssignedIPs[node.GetName()]...).IsEqual(strset.New(hostsubnet.EgressIPs...)) {
-			hostsubnet.EgressIPs = nodeAssignedIPs[node.GetName()]
-			err := r.GetClient().Update(context.TODO(), &hostsubnet, &client.UpdateOptions{})
-			if err != nil {
-				log.Error(err, "unable to update", "hostsubnet ", hostsubnet, "with ips", nodeAssignedIPs[node.GetName()])
-				return err
+func (r *ReconcileEgressIPAM) reconcileHSAssignedIPs(rc *reconcileContext) error {
+	results := make(chan error)
+	defer close(results)
+	for hostsubnetname, hostsubnet := range rc.selectedHostSubnets {
+		hostsubnetnamec := hostsubnetname
+		hostsubnetc := hostsubnet.DeepCopy()
+		go func() {
+			if !strset.New(rc.finallyAssignedIPsByNode[hostsubnetnamec]...).IsEqual(strset.New(hostsubnetc.EgressIPs...)) {
+				hostsubnetc.EgressIPs = rc.finallyAssignedIPsByNode[hostsubnetnamec]
+				err := r.GetClient().Update(context.TODO(), hostsubnetc, &client.UpdateOptions{})
+				if err != nil {
+					log.Error(err, "unable to update", "hostsubnet ", hostsubnetc, "with ips", rc.finallyAssignedIPsByNode[hostsubnetnamec])
+					results <- err
+					return
+				}
 			}
-		}
+			results <- nil
+			return
+		}()
 	}
-	return nil
+	var result *multierror.Error
+	for range rc.selectedHostSubnets {
+		multierror.Append(result, <-results)
+	}
+	return result.ErrorOrNil()
 }
 
 // ensures that hostsubnets have the correct CIDR
-func (r *ReconcileEgressIPAM) assignCIDRsToHostSubnets(nodesByCIDR map[string][]corev1.Node, egressIPAM *redhatcopv1alpha1.EgressIPAM) error {
-	selectedNodesByCIDR, err := r.getSelectedNodesByCIDR(egressIPAM)
-	if err != nil {
-		log.Error(err, "unable to get all selected nodes for ", "egressIPAM", egressIPAM)
-		return err
-	}
-	cidrByNode := map[string]string{}
-	for cidr, nodes := range nodesByCIDR {
-		for _, node := range nodes {
-			cidrByNode[node.GetName()] = cidr
-		}
-	}
-	for cidr, nodes := range selectedNodesByCIDR {
+func (r *ReconcileEgressIPAM) assignCIDRsToHostSubnets(rc *reconcileContext) error {
+	for cidr, nodes := range rc.selectedNodesByCIDR {
 		cidrs := []string{cidr}
 		for _, node := range nodes {
-			hostsubnet, err := r.getHostSubnet(node.GetName())
-			if err != nil {
-				log.Error(err, "unable to lookup hostsubnet for ", "node", node)
-				return err
-			}
-			if !strset.New(hostsubnet.EgressCIDRs...).IsEqual(strset.New([]string{cidrByNode[node.GetName()]}...)) {
-				hostsubnet.EgressCIDRs = []string{cidrByNode[node.GetName()]}
+			hostsubnet := rc.allHostSubnets[node]
+			if !strset.New(hostsubnet.EgressCIDRs...).IsEqual(strset.New(cidrs...)) {
+				hostsubnet.EgressCIDRs = cidrs
 				err := r.GetClient().Update(context.TODO(), &hostsubnet, &client.UpdateOptions{})
 				if err != nil {
 					log.Error(err, "unable to update", "hostsubnet ", hostsubnet, "with cidrs", cidrs)
@@ -141,39 +151,51 @@ func (r *ReconcileEgressIPAM) assignCIDRsToHostSubnets(nodesByCIDR map[string][]
 	return nil
 }
 
-func (r *ReconcileEgressIPAM) getHostSubnet(node string) (ocpnetv1.HostSubnet, error) {
-	hostsubnet := &ocpnetv1.HostSubnet{}
-	err := r.GetClient().Get(context.TODO(), types.NamespacedName{
-		Name: node,
-	}, hostsubnet)
+func (r *ReconcileEgressIPAM) getAllHostSubnets(thiscontext *reconcileContext) (map[string]ocpnetv1.HostSubnet, error) {
+	hostSubnetList := &ocpnetv1.HostSubnetList{}
+	err := r.GetClient().List(context.TODO(), hostSubnetList, &client.ListOptions{})
 	if err != nil {
-		log.Error(err, "unable to get hostsubnet for ", "node", node)
-		return ocpnetv1.HostSubnet{}, nil
+		log.Error(err, "unable to list all hostsubnets")
+		return map[string]ocpnetv1.HostSubnet{}, err
 	}
-	return *hostsubnet, nil
+	selectedHostSubnets := map[string]ocpnetv1.HostSubnet{}
+	for _, hostsubnet := range hostSubnetList.Items {
+		selectedHostSubnets[hostsubnet.GetName()] = hostsubnet
+	}
+	return selectedHostSubnets, nil
 }
 
-func (r *ReconcileEgressIPAM) removeHostsubnetAssignedIPsCIDRsAssigned(egressIPAM *redhatcopv1alpha1.EgressIPAM) error {
-	nodes, err := r.getSelectedNodes(egressIPAM)
-	if err != nil {
-		log.Error(err, "unable to get selected nodes for ", "egressIPAM", egressIPAM)
-		return err
-	}
-	for _, node := range nodes {
-		hostsubnet, err := r.getHostSubnet(node.GetName())
-		if err != nil {
-			log.Error(err, "unable to get hostsubnet for ", "node", node.GetName())
-			return err
-		}
-		if !reflect.DeepEqual(hostsubnet.EgressCIDRs, []string{}) || !reflect.DeepEqual(hostsubnet.EgressIPs, []string{}) {
-			hostsubnet.EgressCIDRs = []string{}
-			hostsubnet.EgressIPs = []string{}
-			err := r.GetClient().Update(context.TODO(), &hostsubnet, &client.UpdateOptions{})
-			if err != nil {
-				log.Error(err, "unable to upadate ", "hostsubnet", hostsubnet)
-				return err
+func (r *ReconcileEgressIPAM) removeHostsubnetAssignedIPsAndCIDRs(rc *reconcileContext) error {
+	results := make(chan error)
+	defer close(results)
+	for _, hostsubnet := range rc.selectedHostSubnets {
+		hostsubnetc := hostsubnet.DeepCopy()
+		go func() {
+			if !reflect.DeepEqual(hostsubnetc.EgressCIDRs, []string{}) || !reflect.DeepEqual(hostsubnetc.EgressIPs, []string{}) {
+				hostsubnetc.EgressCIDRs = []string{}
+				hostsubnetc.EgressIPs = []string{}
+				err := r.GetClient().Update(context.TODO(), hostsubnetc, &client.UpdateOptions{})
+				if err != nil {
+					log.Error(err, "unable to upadate ", "hostsubnet", hostsubnetc.GetName())
+					results <- err
+					return
+				}
 			}
-		}
+			results <- nil
+			return
+		}()
 	}
-	return nil
+	var result *multierror.Error
+	for range rc.selectedHostSubnets {
+		multierror.Append(result, <-results)
+	}
+	return result.ErrorOrNil()
+}
+
+func getHostSubnetNames(hostSubnets map[string]ocpnetv1.HostSubnet) []string {
+	hostSubnetNames := []string{}
+	for _, hostSubnet := range hostSubnets {
+		hostSubnetNames = append(hostSubnetNames, hostSubnet.GetName())
+	}
+	return hostSubnetNames
 }
