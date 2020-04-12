@@ -130,6 +130,38 @@ func (r *ReconcileEgressIPAM) reconcileNetNamespaces(rc *reconcileContext) error
 	return result.ErrorOrNil()
 }
 
+func (r *ReconcileEgressIPAM) cleanUpNamespaceAndNetNamespace(namespaceName string) error {
+	netNamespace := &ocpnetv1.NetNamespace{}
+	err := r.GetClient().Get(context.TODO(), types.NamespacedName{Name: namespaceName}, netNamespace)
+	if err != nil {
+		log.Error(err, "unable to retrieve", "netnamespace", namespaceName)
+		return err
+	}
+	if !reflect.DeepEqual(netNamespace.EgressIPs, []string{}) {
+		netNamespace.EgressIPs = []string{}
+		err := r.GetClient().Update(context.TODO(), netNamespace, &client.UpdateOptions{})
+		if err != nil {
+			log.Error(err, "unable to update ", "netnamespace", netNamespace.GetName())
+			return err
+		}
+	}
+	namespace := &corev1.Namespace{}
+	err = r.GetClient().Get(context.TODO(), types.NamespacedName{Name: namespaceName}, namespace)
+	if err != nil {
+		log.Error(err, "unable to retrieve", "namespace", namespaceName)
+		return err
+	}
+	if _, ok := namespace.GetAnnotations()[namespaceAssociationAnnotation]; ok {
+		delete(namespace.Annotations, namespaceAssociationAnnotation)
+		err := r.GetClient().Update(context.TODO(), namespace, &client.UpdateOptions{})
+		if err != nil {
+			log.Error(err, "unable to update ", "namespace", namespace.GetName())
+			return err
+		}
+	}
+	return nil
+}
+
 func (r *ReconcileEgressIPAM) removeNetnamespaceAssignedIPs(rc *reconcileContext) error {
 	results := make(chan error)
 	defer close(results)

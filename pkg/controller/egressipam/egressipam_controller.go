@@ -163,6 +163,14 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			_, okold := e.MetaOld.GetAnnotations()[namespaceAnnotation]
 			_, oknew := e.MetaNew.GetAnnotations()[namespaceAnnotation]
+			if okold && !oknew {
+				//we need to remove any ips from correspoinding netnamespace
+				log.V(1).Info("cleaning up", "netnamespace", e.MetaOld.GetName())
+				err := reconcileEgressIPAM.cleanUpNamespaceAndNetNamespace(e.MetaOld.GetName())
+				if err != nil {
+					log.Error(err, "unable to clean up", "netnamespace", e.MetaOld.GetName())
+				}
+			}
 			return okold || oknew
 		},
 		CreateFunc: func(e event.CreateEvent) bool {

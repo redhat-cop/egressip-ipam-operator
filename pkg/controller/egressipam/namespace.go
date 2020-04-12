@@ -120,9 +120,9 @@ func (r *ReconcileEgressIPAM) removeNamespaceAssignedIPs(rc *reconcileContext) e
 		namespacec := namespace.DeepCopy()
 		go func() {
 			delete(namespacec.GetAnnotations(), namespaceAssociationAnnotation)
-			err := r.GetClient().Update(context.TODO(), &namespace, &client.UpdateOptions{})
+			err := r.GetClient().Update(context.TODO(), namespacec, &client.UpdateOptions{})
 			if err != nil {
-				log.Error(err, "unable to update ", "namespace", namespace)
+				log.Error(err, "unable to update ", "namespace", namespacec.GetName())
 				results <- err
 				return
 			}
