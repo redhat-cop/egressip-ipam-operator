@@ -595,6 +595,7 @@ type reconcileContext struct {
 	//aws specific
 	awsClient            *ec2.EC2
 	selectedAWSInstances map[string]*ec2.Instance
+	awsUsedIPsByCIDR     map[string][]net.IP
 
 	//variable fields
 	finallyAssignedNamespaces []corev1.Namespace
@@ -642,7 +643,7 @@ func (r *ReconcileEgressIPAM) loadReconcileContext(egressIPAM *redhatcopv1alpha1
 	log.V(1).Info("", "netCIDRByCIDR", rc.netCIDRByCIDR)
 
 	results := make(chan error)
-	//defer close(results)
+	defer close(results)
 	// nodes
 	go func() {
 		allNodes, err := r.getAllNodes(rc)
@@ -705,14 +706,8 @@ func (r *ReconcileEgressIPAM) loadReconcileContext(egressIPAM *redhatcopv1alpha1
 		return
 	}()
 
-	infrastrcuture, err := r.getInfrastructure()
-	if err != nil {
-		log.Error(err, "unable to retrieve cluster infrastrcuture information")
-		return &reconcileContext{}, err
-	}
-
 	//collect results
-	var result *multierror.Error
+	result := &multierror.Error{}
 	for range []string{"nodes", "hostsubnets", "namespaces", "netnamespaces"} {
 		err := <-results
 		log.V(1).Info("receiving", "error", err)
@@ -758,6 +753,12 @@ func (r *ReconcileEgressIPAM) loadReconcileContext(egressIPAM *redhatcopv1alpha1
 	log.V(1).Info("", "selectedNodesByCIDR", rc.selectedNodesByCIDR)
 	log.V(1).Info("", "selectedHostSubnetByCIDR", rc.selectedHostSubnetsByCIDR)
 
+	infrastrcuture, err := r.getInfrastructure()
+	if err != nil {
+		log.Error(err, "unable to retrieve cluster infrastrcuture information")
+		return &reconcileContext{}, err
+	}
+
 	//aws
 	if infrastrcuture.Status.Platform == ocpconfigv1.AWSPlatformType {
 		client, err := r.getAWSClient()
@@ -767,14 +768,48 @@ func (r *ReconcileEgressIPAM) loadReconcileContext(egressIPAM *redhatcopv1alpha1
 		}
 		rc.awsClient = client
 
-		selectedAWSInstances, err := getAWSIstances(rc.awsClient, rc.selectedNodes)
-		if err != nil {
-			log.Error(err, "unable to get selected AWS Instances")
-			return &reconcileContext{}, err
-		}
-		rc.selectedAWSInstances = selectedAWSInstances
+		results := make(chan error)
+		defer close(results)
 
-		log.V(1).Info("", "selectedAWSInstances", getAWSIstancesMapKeys(rc.selectedAWSInstances))
+		go func() {
+			selectedAWSInstances, err := getAWSIstances(rc.awsClient, rc.selectedNodes)
+			if err != nil {
+				log.Error(err, "unable to get selected AWS Instances")
+				results <- err
+				return
+			}
+			rc.selectedAWSInstances = selectedAWSInstances
+
+			log.V(1).Info("", "selectedAWSInstances", getAWSIstancesMapKeys(rc.selectedAWSInstances))
+			results <- nil
+			return
+		}()
+
+		go func() {
+			awsUsedIPsByCIDR, err := r.getAWSUsedIPsByCIDR(rc)
+			if err != nil {
+				log.Error(err, "unable to get used AWS IPs by CIDR")
+				results <- err
+				return
+			}
+			rc.awsUsedIPsByCIDR = awsUsedIPsByCIDR
+
+			log.V(1).Info("", "awsUsedIPsByCIDR", rc.awsUsedIPsByCIDR)
+			results <- nil
+			return
+		}()
+		// collect results
+		result := &multierror.Error{}
+		for range []string{"awsinstance", "usedIPS"} {
+			err := <-results
+			log.V(1).Info("receiving", "error", err)
+			multierror.Append(result, err)
+		}
+		log.V(1).Info("after aws initialization", "multierror", result.Error, "ErrorOrNil", result.ErrorOrNil())
+		if result.ErrorOrNil() != nil {
+			log.Error(result, "unable ro run parallel aws initialization")
+			return &reconcileContext{}, result
+		}
 
 	}
 

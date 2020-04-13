@@ -81,9 +81,14 @@ func (r *ReconcileEgressIPAM) assignIPsToNamespaces(rc *reconcileContext) ([]cor
 				return []corev1.Namespace{}, err
 			}
 			IPsByCIDR[cidr] = append(IPsByCIDR[cidr], ipmath.DeltaIP(base, 1), ipmath.DeltaIP(base, 2), ipmath.DeltaIP(base, 3))
+			IPsByCIDR[cidr] = append(IPsByCIDR[cidr], rc.awsUsedIPsByCIDR[cidr]...)
 		}
 	}
 	log.V(1).Info("adding cloud infrastructure reserved IPs ", "IPs by CIDR", IPsByCIDR)
+
+	IPsByCIDR = removeDuplicates(IPsByCIDR)
+
+	log.V(1).Info("final  ", "IPs by CIDR", IPsByCIDR)
 
 	for cidr := range IPsByCIDR {
 		IPsByCIDR[cidr] = sortIPs(IPsByCIDR[cidr])
@@ -111,6 +116,22 @@ func (r *ReconcileEgressIPAM) assignIPsToNamespaces(rc *reconcileContext) ([]cor
 		newlyAssignedNamespaces = append(newlyAssignedNamespaces, *namespace)
 	}
 	return newlyAssignedNamespaces, nil
+}
+
+func removeDuplicates(IPsByCIDR map[string][]net.IP) map[string][]net.IP {
+	result := map[string][]net.IP{}
+	for cidr, IPs := range IPsByCIDR {
+		ipSet := strset.New()
+		for _, IP := range IPs {
+			ipSet.Add(IP.String())
+		}
+		netIPs := []net.IP{}
+		for _, ip := range ipSet.List() {
+			netIPs = append(netIPs, net.ParseIP(ip))
+		}
+		result[cidr] = netIPs
+	}
+	return result
 }
 
 // returns a set of IPs. These IPs are the next available IP per CIDR.

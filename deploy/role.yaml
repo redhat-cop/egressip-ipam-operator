@@ -65,6 +65,14 @@ rules:
       - list
       - watch
   - apiGroups:
+    - "machine.openshift.io"
+    resources:
+    - machinesets
+    verbs:
+      - get
+      - list
+      - watch                  
+  - apiGroups:
     - "cloudcredential.openshift.io"
     resources:
     - credentialsrequests

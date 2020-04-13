@@ -125,7 +125,7 @@ func (r *ReconcileEgressIPAM) reconcileHSAssignedIPs(rc *reconcileContext) error
 			return
 		}()
 	}
-	var result *multierror.Error
+	result := &multierror.Error{}
 	for range rc.selectedHostSubnets {
 		multierror.Append(result, <-results)
 	}
@@ -185,7 +185,7 @@ func (r *ReconcileEgressIPAM) removeHostsubnetAssignedIPsAndCIDRs(rc *reconcileC
 			return
 		}()
 	}
-	var result *multierror.Error
+	result := &multierror.Error{}
 	for range rc.selectedHostSubnets {
 		multierror.Append(result, <-results)
 	}
