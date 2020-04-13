@@ -21,7 +21,7 @@ type enqueForSelectedEgressIPAMNamespace struct {
 
 // trigger a egressIPAM reconcile event for those egressIPAM objcts that reference this node
 func (e *enqueForSelectedEgressIPAMNamespace) Create(evt event.CreateEvent, q workqueue.RateLimitingInterface) {
-	egressIPAMNAme, ok := evt.Meta.GetAnnotations()[namespaceAnnotation]
+	egressIPAMNAme, ok := evt.Meta.GetAnnotations()[NamespaceAnnotation]
 	if ok {
 		q.Add(reconcile.Request{NamespacedName: types.NamespacedName{
 			Name: egressIPAMNAme,
@@ -32,14 +32,14 @@ func (e *enqueForSelectedEgressIPAMNamespace) Create(evt event.CreateEvent, q wo
 // Update implements EventHandler
 // trigger a router reconcile event for those routes that reference this secret
 func (e *enqueForSelectedEgressIPAMNamespace) Update(evt event.UpdateEvent, q workqueue.RateLimitingInterface) {
-	egressIPAMNAme, ok := evt.MetaOld.GetAnnotations()[namespaceAnnotation]
+	egressIPAMNAme, ok := evt.MetaOld.GetAnnotations()[NamespaceAnnotation]
 	if ok {
 		q.Add(reconcile.Request{NamespacedName: types.NamespacedName{
 			Name: egressIPAMNAme,
 		}})
 	}
 
-	egressIPAMNAme, ok = evt.MetaNew.GetAnnotations()[namespaceAnnotation]
+	egressIPAMNAme, ok = evt.MetaNew.GetAnnotations()[NamespaceAnnotation]
 	if ok {
 		q.Add(reconcile.Request{NamespacedName: types.NamespacedName{
 			Name: egressIPAMNAme,
@@ -69,9 +69,9 @@ func (r *ReconcileEgressIPAM) getReferringNamespaces(rc *reconcileContext) (refe
 	unassignedNamespaces = []corev1.Namespace{}
 	assignedNamespaces = []corev1.Namespace{}
 	for _, namespace := range namespaceList.Items {
-		if value, ok := namespace.GetAnnotations()[namespaceAnnotation]; ok && value == rc.egressIPAM.GetName() {
+		if value, ok := namespace.GetAnnotations()[NamespaceAnnotation]; ok && value == rc.egressIPAM.GetName() {
 			referringNamespaces[namespace.GetName()] = namespace
-			if _, ok := namespace.GetAnnotations()[namespaceAssociationAnnotation]; ok {
+			if _, ok := namespace.GetAnnotations()[NamespaceAssociationAnnotation]; ok {
 				assignedNamespaces = append(assignedNamespaces, namespace)
 			} else {
 				unassignedNamespaces = append(unassignedNamespaces, namespace)
@@ -92,7 +92,7 @@ func sortIPsByCIDR(rc *reconcileContext) (map[string][]net.IP, error) {
 		IPsByCIDR[cidr] = []net.IP{}
 	}
 	for _, namespace := range rc.initiallyAssignedNamespaces {
-		if value, ok := namespace.GetAnnotations()[namespaceAssociationAnnotation]; ok {
+		if value, ok := namespace.GetAnnotations()[NamespaceAssociationAnnotation]; ok {
 			ipstrings := strings.Split(value, ",")
 			for i, cidr := range rc.cIDRs {
 				IP := net.ParseIP(ipstrings[i])
@@ -119,7 +119,7 @@ func (r *ReconcileEgressIPAM) removeNamespaceAssignedIPs(rc *reconcileContext) e
 	for _, namespace := range rc.initiallyAssignedNamespaces {
 		namespacec := namespace.DeepCopy()
 		go func() {
-			delete(namespacec.GetAnnotations(), namespaceAssociationAnnotation)
+			delete(namespacec.GetAnnotations(), NamespaceAssociationAnnotation)
 			err := r.GetClient().Update(context.TODO(), namespacec, &client.UpdateOptions{})
 			if err != nil {
 				log.Error(err, "unable to update ", "namespace", namespacec.GetName())

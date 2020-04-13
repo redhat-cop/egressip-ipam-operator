@@ -81,9 +81,14 @@ func (r *ReconcileEgressIPAM) assignIPsToNamespaces(rc *reconcileContext) ([]cor
 				return []corev1.Namespace{}, err
 			}
 			IPsByCIDR[cidr] = append(IPsByCIDR[cidr], ipmath.DeltaIP(base, 1), ipmath.DeltaIP(base, 2), ipmath.DeltaIP(base, 3))
+			IPsByCIDR[cidr] = append(IPsByCIDR[cidr], rc.awsUsedIPsByCIDR[cidr]...)
 		}
 	}
 	log.V(1).Info("adding cloud infrastructure reserved IPs ", "IPs by CIDR", IPsByCIDR)
+
+	IPsByCIDR = removeDuplicates(IPsByCIDR)
+
+	log.V(1).Info("final  ", "IPs by CIDR", IPsByCIDR)
 
 	for cidr := range IPsByCIDR {
 		IPsByCIDR[cidr] = sortIPs(IPsByCIDR[cidr])
@@ -102,7 +107,7 @@ func (r *ReconcileEgressIPAM) assignIPsToNamespaces(rc *reconcileContext) ([]cor
 			ipstrings = append(ipstrings, newIPsByCIDRs[cidr].String())
 		}
 		log.Info("ips assigned to", "namespace", namespace.GetName(), "ips", ipstrings)
-		namespace.ObjectMeta.Annotations[namespaceAssociationAnnotation] = strings.Join(ipstrings, ",")
+		namespace.ObjectMeta.Annotations[NamespaceAssociationAnnotation] = strings.Join(ipstrings, ",")
 		err = r.GetClient().Update(context.TODO(), namespace, &client.UpdateOptions{})
 		if err != nil {
 			log.Error(err, "unable to update", "namespace", namespace.GetName())
@@ -111,6 +116,22 @@ func (r *ReconcileEgressIPAM) assignIPsToNamespaces(rc *reconcileContext) ([]cor
 		newlyAssignedNamespaces = append(newlyAssignedNamespaces, *namespace)
 	}
 	return newlyAssignedNamespaces, nil
+}
+
+func removeDuplicates(IPsByCIDR map[string][]net.IP) map[string][]net.IP {
+	result := map[string][]net.IP{}
+	for cidr, IPs := range IPsByCIDR {
+		ipSet := strset.New()
+		for _, IP := range IPs {
+			ipSet.Add(IP.String())
+		}
+		netIPs := []net.IP{}
+		for _, ip := range ipSet.List() {
+			netIPs = append(netIPs, net.ParseIP(ip))
+		}
+		result[cidr] = netIPs
+	}
+	return result
 }
 
 // returns a set of IPs. These IPs are the next available IP per CIDR.
@@ -210,7 +231,7 @@ func (r *ReconcileEgressIPAM) assignIPsToNodes(rc *reconcileContext) (map[string
 	log.V(1).Info("", "assignedIPsToNodesByCIDR: ", assignedIPsToNodesByCIDR)
 	// 2. get assignedIPsToNamespacesByCIDR
 	for _, namespace := range rc.finallyAssignedNamespaces {
-		ipsstr, ok := namespace.GetAnnotations()[namespaceAssociationAnnotation]
+		ipsstr, ok := namespace.GetAnnotations()[NamespaceAssociationAnnotation]
 		if !ok {
 			return map[string][]string{}, errors.New("unable to find ips in namespace" + namespace.GetName())
 		}

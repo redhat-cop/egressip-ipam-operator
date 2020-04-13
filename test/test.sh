@@ -5,6 +5,15 @@
 # where command can be create or delete
 
 
+test (){
+  region=$(oc get infrastructure cluster -o jsonpath='{.status.platformStatus.aws.region}')
+  subnetTagList=$(oc get machinesets -n openshift-machine-api -o json | jq -r .items[].spec.template.spec.providerSpec.value.subnet.filters[].values[])
+  for tag in ${subnetTagList}; do 
+    subnetId=$(aws ec2 --region ${region} describe-subnets --filters Name=tag:Name,Values=${tag}| jq -r .Subnets[].SubnetId)
+    aws ec2 --region ${region} describe-network-interfaces --filters Name=subnet-id,Values=${subnetId} | jq .NetworkInterfaces[].PrivateIpAddresses[].PrivateIpAddress
+  done  
+}
+
 create_namespaces () {
   COUNT=1
   while [ $COUNT -lt $1 ]; do

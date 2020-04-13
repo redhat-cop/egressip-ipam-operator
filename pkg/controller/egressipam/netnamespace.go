@@ -31,7 +31,7 @@ func (e *enqueForSelectedEgressIPAMNetNamespace) Create(evt event.CreateEvent, q
 	if err != nil {
 		log.Error(err, "Unable to get Namespace from ", "NetNamespace", netnamespace)
 	}
-	egressIPAMNAme, ok := namespace.GetAnnotations()[namespaceAnnotation]
+	egressIPAMNAme, ok := namespace.GetAnnotations()[NamespaceAnnotation]
 	if ok {
 		q.Add(reconcile.Request{NamespacedName: types.NamespacedName{
 			Name: egressIPAMNAme,
@@ -51,7 +51,7 @@ func (e *enqueForSelectedEgressIPAMNetNamespace) Update(evt event.UpdateEvent, q
 	if err != nil {
 		log.Error(err, "Unable to get Namespace from ", "NetNamespace", netnamespace)
 	}
-	egressIPAMName, ok := namespace.GetAnnotations()[namespaceAnnotation]
+	egressIPAMName, ok := namespace.GetAnnotations()[NamespaceAnnotation]
 	if ok {
 		q.Add(reconcile.Request{NamespacedName: types.NamespacedName{
 			Name: egressIPAMName,
@@ -66,7 +66,7 @@ func (e *enqueForSelectedEgressIPAMNetNamespace) Update(evt event.UpdateEvent, q
 	if err != nil {
 		log.Error(err, "Unable to get Namespace from ", "NetNamespace", netnamespace)
 	}
-	egressIPAMName, ok = namespace.GetAnnotations()[namespaceAnnotation]
+	egressIPAMName, ok = namespace.GetAnnotations()[NamespaceAnnotation]
 	if ok {
 		q.Add(reconcile.Request{NamespacedName: types.NamespacedName{
 			Name: egressIPAMName,
@@ -103,9 +103,9 @@ func (r *ReconcileEgressIPAM) reconcileNetNamespaces(rc *reconcileContext) error
 	for _, namespace := range rc.finallyAssignedNamespaces {
 		namespacec := namespace.DeepCopy()
 		go func() {
-			ipstring, ok := namespacec.Annotations[namespaceAssociationAnnotation]
+			ipstring, ok := namespacec.Annotations[NamespaceAssociationAnnotation]
 			if !ok {
-				results <- errors.New("namespace " + namespacec.GetName() + " doesn't have required annotation: " + namespaceAssociationAnnotation)
+				results <- errors.New("namespace " + namespacec.GetName() + " doesn't have required annotation: " + NamespaceAssociationAnnotation)
 				return
 			}
 			IPs := strings.Split(ipstring, ",")
@@ -123,43 +123,11 @@ func (r *ReconcileEgressIPAM) reconcileNetNamespaces(rc *reconcileContext) error
 			return
 		}()
 	}
-	var result *multierror.Error
+	result := &multierror.Error{}
 	for range rc.finallyAssignedNamespaces {
 		multierror.Append(result, <-results)
 	}
 	return result.ErrorOrNil()
-}
-
-func (r *ReconcileEgressIPAM) cleanUpNamespaceAndNetNamespace(namespaceName string) error {
-	netNamespace := &ocpnetv1.NetNamespace{}
-	err := r.GetClient().Get(context.TODO(), types.NamespacedName{Name: namespaceName}, netNamespace)
-	if err != nil {
-		log.Error(err, "unable to retrieve", "netnamespace", namespaceName)
-		return err
-	}
-	if !reflect.DeepEqual(netNamespace.EgressIPs, []string{}) {
-		netNamespace.EgressIPs = []string{}
-		err := r.GetClient().Update(context.TODO(), netNamespace, &client.UpdateOptions{})
-		if err != nil {
-			log.Error(err, "unable to update ", "netnamespace", netNamespace.GetName())
-			return err
-		}
-	}
-	namespace := &corev1.Namespace{}
-	err = r.GetClient().Get(context.TODO(), types.NamespacedName{Name: namespaceName}, namespace)
-	if err != nil {
-		log.Error(err, "unable to retrieve", "namespace", namespaceName)
-		return err
-	}
-	if _, ok := namespace.GetAnnotations()[namespaceAssociationAnnotation]; ok {
-		delete(namespace.Annotations, namespaceAssociationAnnotation)
-		err := r.GetClient().Update(context.TODO(), namespace, &client.UpdateOptions{})
-		if err != nil {
-			log.Error(err, "unable to update ", "namespace", namespace.GetName())
-			return err
-		}
-	}
-	return nil
 }
 
 func (r *ReconcileEgressIPAM) removeNetnamespaceAssignedIPs(rc *reconcileContext) error {
@@ -182,7 +150,7 @@ func (r *ReconcileEgressIPAM) removeNetnamespaceAssignedIPs(rc *reconcileContext
 			return
 		}()
 	}
-	var result *multierror.Error
+	result := &multierror.Error{}
 	for range rc.finallyAssignedNamespaces {
 		multierror.Append(result, <-results)
 	}

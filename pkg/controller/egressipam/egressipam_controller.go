@@ -34,10 +34,10 @@ const controllerName = "egressipam-controller"
 // name of the secret with the credential (cloud independent)
 const credentialsSecretName = "egress-ipam-operator-cloud-credentials"
 
-const namespaceAnnotation = "egressip-ipam-operator.redhat-cop.io/egressipam"
+const NamespaceAnnotation = "egressip-ipam-operator.redhat-cop.io/egressipam"
 
 // this is a comma-separated list of assigned ip address. There should be an IP from each of the CIDRs in the egressipam
-const namespaceAssociationAnnotation = "egressip-ipam-operator.redhat-cop.io/egressips"
+const NamespaceAssociationAnnotation = "egressip-ipam-operator.redhat-cop.io/egressips"
 
 var log = logf.Log.WithName(controllerName)
 
@@ -162,24 +162,18 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 
 	IsAnnotated := predicate.Funcs{
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			_, okold := e.MetaOld.GetAnnotations()[namespaceAnnotation]
-			_, oknew := e.MetaNew.GetAnnotations()[namespaceAnnotation]
-			if okold && !oknew {
-				//we need to remove any ips from correspoinding netnamespace
-				log.V(1).Info("cleaning up", "netnamespace", e.MetaOld.GetName())
-				err := reconcileEgressIPAM.cleanUpNamespaceAndNetNamespace(e.MetaOld.GetName())
-				if err != nil {
-					log.Error(err, "unable to clean up", "netnamespace", e.MetaOld.GetName())
-				}
-			}
-			return okold || oknew
+			_, okold := e.MetaOld.GetAnnotations()[NamespaceAnnotation]
+			_, oknew := e.MetaNew.GetAnnotations()[NamespaceAnnotation]
+			_, ipsold := e.MetaOld.GetAnnotations()[NamespaceAssociationAnnotation]
+			_, ipsnew := e.MetaNew.GetAnnotations()[NamespaceAssociationAnnotation]
+			return (!okold && oknew) || (ipsnew != ipsold)
 		},
 		CreateFunc: func(e event.CreateEvent) bool {
-			_, ok := e.Meta.GetAnnotations()[namespaceAnnotation]
+			_, ok := e.Meta.GetAnnotations()[NamespaceAnnotation]
 			return ok
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
-			_, ok := e.Meta.GetAnnotations()[namespaceAnnotation]
+			_, ok := e.Meta.GetAnnotations()[NamespaceAnnotation]
 			return ok
 		},
 		GenericFunc: func(e event.GenericEvent) bool {
@@ -595,6 +589,7 @@ type reconcileContext struct {
 	//aws specific
 	awsClient            *ec2.EC2
 	selectedAWSInstances map[string]*ec2.Instance
+	awsUsedIPsByCIDR     map[string][]net.IP
 
 	//variable fields
 	finallyAssignedNamespaces []corev1.Namespace
@@ -642,7 +637,7 @@ func (r *ReconcileEgressIPAM) loadReconcileContext(egressIPAM *redhatcopv1alpha1
 	log.V(1).Info("", "netCIDRByCIDR", rc.netCIDRByCIDR)
 
 	results := make(chan error)
-	//defer close(results)
+	defer close(results)
 	// nodes
 	go func() {
 		allNodes, err := r.getAllNodes(rc)
@@ -705,14 +700,8 @@ func (r *ReconcileEgressIPAM) loadReconcileContext(egressIPAM *redhatcopv1alpha1
 		return
 	}()
 
-	infrastrcuture, err := r.getInfrastructure()
-	if err != nil {
-		log.Error(err, "unable to retrieve cluster infrastrcuture information")
-		return &reconcileContext{}, err
-	}
-
 	//collect results
-	var result *multierror.Error
+	result := &multierror.Error{}
 	for range []string{"nodes", "hostsubnets", "namespaces", "netnamespaces"} {
 		err := <-results
 		log.V(1).Info("receiving", "error", err)
@@ -758,6 +747,12 @@ func (r *ReconcileEgressIPAM) loadReconcileContext(egressIPAM *redhatcopv1alpha1
 	log.V(1).Info("", "selectedNodesByCIDR", rc.selectedNodesByCIDR)
 	log.V(1).Info("", "selectedHostSubnetByCIDR", rc.selectedHostSubnetsByCIDR)
 
+	infrastrcuture, err := r.getInfrastructure()
+	if err != nil {
+		log.Error(err, "unable to retrieve cluster infrastrcuture information")
+		return &reconcileContext{}, err
+	}
+
 	//aws
 	if infrastrcuture.Status.Platform == ocpconfigv1.AWSPlatformType {
 		client, err := r.getAWSClient()
@@ -767,14 +762,48 @@ func (r *ReconcileEgressIPAM) loadReconcileContext(egressIPAM *redhatcopv1alpha1
 		}
 		rc.awsClient = client
 
-		selectedAWSInstances, err := getAWSIstances(rc.awsClient, rc.selectedNodes)
-		if err != nil {
-			log.Error(err, "unable to get selected AWS Instances")
-			return &reconcileContext{}, err
-		}
-		rc.selectedAWSInstances = selectedAWSInstances
+		results := make(chan error)
+		defer close(results)
 
-		log.V(1).Info("", "selectedAWSInstances", getAWSIstancesMapKeys(rc.selectedAWSInstances))
+		go func() {
+			selectedAWSInstances, err := getAWSIstances(rc.awsClient, rc.selectedNodes)
+			if err != nil {
+				log.Error(err, "unable to get selected AWS Instances")
+				results <- err
+				return
+			}
+			rc.selectedAWSInstances = selectedAWSInstances
+
+			log.V(1).Info("", "selectedAWSInstances", getAWSIstancesMapKeys(rc.selectedAWSInstances))
+			results <- nil
+			return
+		}()
+
+		go func() {
+			awsUsedIPsByCIDR, err := r.getAWSUsedIPsByCIDR(rc)
+			if err != nil {
+				log.Error(err, "unable to get used AWS IPs by CIDR")
+				results <- err
+				return
+			}
+			rc.awsUsedIPsByCIDR = awsUsedIPsByCIDR
+
+			log.V(1).Info("", "awsUsedIPsByCIDR", rc.awsUsedIPsByCIDR)
+			results <- nil
+			return
+		}()
+		// collect results
+		result := &multierror.Error{}
+		for range []string{"awsinstance", "usedIPS"} {
+			err := <-results
+			log.V(1).Info("receiving", "error", err)
+			multierror.Append(result, err)
+		}
+		log.V(1).Info("after aws initialization", "multierror", result.Error, "ErrorOrNil", result.ErrorOrNil())
+		if result.ErrorOrNil() != nil {
+			log.Error(result, "unable ro run parallel aws initialization")
+			return &reconcileContext{}, result
+		}
 
 	}
 

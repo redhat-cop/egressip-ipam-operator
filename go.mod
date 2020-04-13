@@ -3,21 +3,21 @@ module github.com/redhat-cop/egressip-ipam-operator
 go 1.13
 
 require (
-	github.com/aws/aws-sdk-go v1.17.7
-	github.com/hashicorp/aws-sdk-go v0.0.0-20150417135318-e6ea0192eee4 // indirect
+	github.com/aws/aws-sdk-go v1.28.2
 	github.com/hashicorp/go-multierror v1.0.0
 	github.com/jpillora/ipmath v0.0.0-20180121110145-ebede80a2ab9
 	github.com/openshift/api v3.9.1-0.20190924102528-32369d4db2ad+incompatible
 	github.com/openshift/cloud-credential-operator v0.0.0-20200303191255-cc686af9c1b9
+	github.com/openshift/machine-api-operator v0.2.1-0.20200402110321-4f3602b96da3
 	github.com/operator-framework/operator-sdk v0.14.0
 	github.com/redhat-cop/operator-utils v0.1.1
 	github.com/scylladb/go-set v1.0.2
 	github.com/spf13/pflag v1.0.5
-	github.com/vaughan0/go-ini v0.0.0-20130923145212-a98ad7ee00ec // indirect
-	k8s.io/api v0.0.0
-	k8s.io/apimachinery v0.17.0
+	k8s.io/api v0.18.0-rc.1
+	k8s.io/apimachinery v0.18.0-rc.1
 	k8s.io/client-go v12.0.0+incompatible
-	sigs.k8s.io/controller-runtime v0.4.0
+	sigs.k8s.io/controller-runtime v0.5.2
+
 )
 
 // Pinned to kubernetes-1.16.2

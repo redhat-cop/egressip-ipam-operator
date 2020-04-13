@@ -1,7 +1,10 @@
 package egressipam
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
+	"net"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -10,10 +13,12 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	multierror "github.com/hashicorp/go-multierror"
 	cloudcredentialv1 "github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1"
+	machinev1beta1 "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
 	"github.com/scylladb/go-set/strset"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func (r *ReconcileEgressIPAM) getAWSClient() (*ec2.EC2, error) {
@@ -110,7 +115,7 @@ func (r *ReconcileEgressIPAM) removeAWSUnusedIPs(rc *reconcileContext) error {
 			return
 		}()
 	}
-	var result *multierror.Error
+	result := &multierror.Error{}
 	for range rc.finallyAssignedIPsByNode {
 		multierror.Append(result, <-results)
 	}
@@ -157,7 +162,7 @@ func (r *ReconcileEgressIPAM) reconcileAWSAssignedIPs(rc *reconcileContext) erro
 			return
 		}()
 	}
-	var result *multierror.Error
+	result := &multierror.Error{}
 	for range rc.finallyAssignedIPsByNode {
 		multierror.Append(result, <-results)
 	}
@@ -176,6 +181,8 @@ func (r *ReconcileEgressIPAM) createAWSCredentialRequest() error {
 					"ec2:DescribeInstances",
 					"ec2:UnassignPrivateIpAddresses",
 					"ec2:AssignPrivateIpAddresses",
+					"ec2:DescribeSubnets",
+					"ec2:DescribeNetworkInterfaces",
 				},
 				Effect:   "Allow",
 				Resource: "*",
@@ -268,9 +275,133 @@ func (r *ReconcileEgressIPAM) removeAWSAssignedIPs(rc *reconcileContext) error {
 			return
 		}()
 	}
-	var result *multierror.Error
+	result := &multierror.Error{}
 	for range rc.selectedNodes {
 		multierror.Append(result, <-results)
 	}
 	return result.ErrorOrNil()
+}
+
+//getTakenIPsByCIDR this function will lookup all the subnets in which nodes are deployed and then lookup all the ips allocated by those subnest
+//currently it is requred that cidr declared in the egress map, correspon to cidr declared in subnets.
+func (r *ReconcileEgressIPAM) getAWSUsedIPsByCIDR(rc *reconcileContext) (map[string][]net.IP, error) {
+	machinesetList := &machinev1beta1.MachineSetList{}
+	err := r.GetClient().List(context.TODO(), machinesetList, &client.ListOptions{})
+	if err != nil {
+		log.Error(err, "unable to load all machinesets")
+		return map[string][]net.IP{}, err
+	}
+
+	subnetTagNames := []*string{}
+	for _, machine := range machinesetList.Items {
+		aWSMachineProviderConfig := AWSMachineProviderConfig{}
+		err := json.Unmarshal(machine.Spec.Template.Spec.ProviderSpec.Value.Raw, &aWSMachineProviderConfig)
+		if err != nil {
+			log.Error(err, "unable to unmarshall into wsproviderv1alpha2.AWSMachineSpec", "raw json", string(machine.Spec.Template.Spec.ProviderSpec.Value.Raw))
+			return map[string][]net.IP{}, err
+		}
+		for _, filter := range aWSMachineProviderConfig.Subnet.Filters {
+			if filter.Name == "tag:Name" {
+				for _, value := range filter.Values {
+					subnetTagNames = append(subnetTagNames, aws.String(value))
+				}
+
+			}
+		}
+	}
+
+	describeSubnetInput := &ec2.DescribeSubnetsInput{
+		Filters: []*ec2.Filter{
+			{
+				Name:   aws.String("tag:Name"),
+				Values: subnetTagNames,
+			},
+		},
+	}
+
+	describeSubnetResult, err := rc.awsClient.DescribeSubnets(describeSubnetInput)
+	if err != nil {
+		log.Error(err, "unable to retrieve subnets ", "with request", describeSubnetInput)
+		return map[string][]net.IP{}, err
+	}
+	log.V(1).Info("", "describeSubnetResult", describeSubnetResult)
+
+	subnetIDs := []*string{}
+	for _, subnet := range describeSubnetResult.Subnets {
+		subnetIDs = append(subnetIDs, subnet.SubnetId)
+	}
+
+	describeNetworkInterfacesInput := &ec2.DescribeNetworkInterfacesInput{
+		Filters: []*ec2.Filter{
+			{
+				Name:   aws.String("subnet-id"),
+				Values: subnetIDs,
+			},
+		},
+	}
+
+	describeNetworkInterfacesResult, err := rc.awsClient.DescribeNetworkInterfaces(describeNetworkInterfacesInput)
+	if err != nil {
+		log.Error(err, "unable to retrieve network interfaces ", "with request", describeNetworkInterfacesInput)
+		return map[string][]net.IP{}, err
+	}
+	log.V(1).Info("", "describeNetworkInterfacesResult", describeNetworkInterfacesResult)
+
+	usedIPsByCIDR := map[string][]net.IP{}
+	for _, cidr := range rc.cIDRs {
+		usedIPsByCIDR[cidr] = []net.IP{}
+		_, CIDR, err := net.ParseCIDR(cidr)
+		if err != nil {
+			log.Error(err, "unable to parse ", "CIDR", cidr)
+			return map[string][]net.IP{}, err
+		}
+		for _, networkInterface := range describeNetworkInterfacesResult.NetworkInterfaces {
+			for _, address := range networkInterface.PrivateIpAddresses {
+				IP := net.ParseIP(*address.PrivateIpAddress)
+				if IP == nil {
+					log.Error(err, "unable to parse ", "IP", *address.PrivateIpAddress)
+					return map[string][]net.IP{}, err
+				}
+				if CIDR.Contains(IP) {
+					usedIPsByCIDR[cidr] = append(usedIPsByCIDR[cidr], IP)
+				}
+			}
+		}
+	}
+	return usedIPsByCIDR, nil
+}
+
+// this is a hack to work around current dependecy hell
+
+// AWSMachineProviderConfig is the Schema for the awsmachineproviderconfigs API
+// +k8s:openapi-gen=true
+type AWSMachineProviderConfig struct {
+	//TODO As par of the hack I deleted all the other fields in the hope this will make it more stable.
+	// Subnet is a reference to the subnet to use for this instance
+	Subnet AWSResourceReference `json:"subnet"`
+}
+
+// AWSResourceReference is a reference to a specific AWS resource by ID, ARN, or filters.
+// Only one of ID, ARN or Filters may be specified. Specifying more than one will result in
+// a validation error.
+type AWSResourceReference struct {
+	// ID of resource
+	// +optional
+	ID *string `json:"id,omitempty"`
+
+	// ARN of resource
+	// +optional
+	ARN *string `json:"arn,omitempty"`
+
+	// Filters is a set of filters used to identify a resource
+	Filters []Filter `json:"filters,omitempty"`
+}
+
+// Filter is a filter used to identify an AWS resource
+type Filter struct {
+	// Name of the filter. Filter names are case-sensitive.
+	Name string `json:"name"`
+
+	// Values includes one or more filter values. Filter values are case-sensitive.
+	Values []string `json:"values,omitempty"`
 }
