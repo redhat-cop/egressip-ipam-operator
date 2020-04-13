@@ -107,7 +107,7 @@ func (r *ReconcileEgressIPAM) assignIPsToNamespaces(rc *reconcileContext) ([]cor
 			ipstrings = append(ipstrings, newIPsByCIDRs[cidr].String())
 		}
 		log.Info("ips assigned to", "namespace", namespace.GetName(), "ips", ipstrings)
-		namespace.ObjectMeta.Annotations[namespaceAssociationAnnotation] = strings.Join(ipstrings, ",")
+		namespace.ObjectMeta.Annotations[NamespaceAssociationAnnotation] = strings.Join(ipstrings, ",")
 		err = r.GetClient().Update(context.TODO(), namespace, &client.UpdateOptions{})
 		if err != nil {
 			log.Error(err, "unable to update", "namespace", namespace.GetName())
@@ -231,7 +231,7 @@ func (r *ReconcileEgressIPAM) assignIPsToNodes(rc *reconcileContext) (map[string
 	log.V(1).Info("", "assignedIPsToNodesByCIDR: ", assignedIPsToNodesByCIDR)
 	// 2. get assignedIPsToNamespacesByCIDR
 	for _, namespace := range rc.finallyAssignedNamespaces {
-		ipsstr, ok := namespace.GetAnnotations()[namespaceAssociationAnnotation]
+		ipsstr, ok := namespace.GetAnnotations()[NamespaceAssociationAnnotation]
 		if !ok {
 			return map[string][]string{}, errors.New("unable to find ips in namespace" + namespace.GetName())
 		}
