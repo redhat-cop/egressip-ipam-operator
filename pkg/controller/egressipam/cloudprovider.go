@@ -8,11 +8,6 @@ const (
 )
 
 type Cloudprovider interface {
-	// FailureRegion defines the failure region (in AWS "Region") of the cluster within the cloud providers infrastructure.
-	FailureRegion(region string) error
-
-	// CreateCredentialRequest will create a CredentialOperator request for the cloud provider
-	CreateCredentialRequest() error
 
 	// HarvestCloudData collects the needed data from the cloud provider or throws an error.
 	HarvestCloudData(rc *ReconcileContext) error

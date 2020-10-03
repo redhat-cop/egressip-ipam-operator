@@ -35,7 +35,7 @@ func matchesHostSubnet(egressIPAM *redhatcopv1alpha1.EgressIPAM, hostsubnet *ocp
 	return false, ""
 }
 
-// trigger a egressIPAM reconcile event for those egressIPAM objects that reference this hostsubnet indireclty via the corresponding node.
+// trigger a EgressIPAM reconcile event for those EgressIPAM objects that reference this hostsubnet indireclty via the corresponding node.
 func (e *enqueForSelectingEgressIPAMHostSubnet) Create(evt event.CreateEvent, q workqueue.RateLimitingInterface) {
 	hostsubnet, ok := evt.Object.(*ocpnetv1.HostSubnet)
 	if !ok {

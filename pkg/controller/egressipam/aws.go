@@ -36,12 +36,6 @@ type AwsCloudprovider struct {
 	awsUsedIPsByCIDR     map[string][]net.IP
 }
 
-func (r *AwsCloudprovider) FailureRegion(region string) error {
-	r.AwsRegion = region
-
-	return nil
-}
-
 func (r *AwsCloudprovider) GetUsedIPs(_ *ReconcileContext) map[string][]net.IP {
 	return r.awsUsedIPsByCIDR
 }

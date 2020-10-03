@@ -410,6 +410,7 @@ func (r *ReconcileEgressIPAM) Reconcile(request reconcile.Request) (reconcile.Re
 		if err != nil {
 			return r.ManageError(instance, err)
 		}
+		log.V(1).Info("", "FinallyAssignedIPsByNode", finallyAssignedIPsByNode)
 
 		err = r.reconcileHSAssignedIPs(rc)
 		if err != nil {
