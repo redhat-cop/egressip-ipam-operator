@@ -35,7 +35,7 @@ func matchesHostSubnet(egressIPAM *redhatcopv1alpha1.EgressIPAM, hostsubnet *ocp
 	return false, ""
 }
 
-// trigger a egressIPAM reconcile event for those egressIPAM objects that reference this hostsubnet indireclty via the corresponding node.
+// trigger a EgressIPAM reconcile event for those EgressIPAM objects that reference this hostsubnet indireclty via the corresponding node.
 func (e *enqueForSelectingEgressIPAMHostSubnet) Create(evt event.CreateEvent, q workqueue.RateLimitingInterface) {
 	hostsubnet, ok := evt.Object.(*ocpnetv1.HostSubnet)
 	if !ok {
@@ -105,18 +105,18 @@ func (e *enqueForSelectingEgressIPAMHostSubnet) Generic(evt event.GenericEvent, 
 }
 
 // ensures that hostsubntes have the correct egressIPs
-func (r *ReconcileEgressIPAM) reconcileHSAssignedIPs(rc *reconcileContext) error {
+func (r *ReconcileEgressIPAM) reconcileHSAssignedIPs(rc *ReconcileContext) error {
 	results := make(chan error)
 	defer close(results)
-	for hostsubnetname, hostsubnet := range rc.selectedHostSubnets {
+	for hostsubnetname, hostsubnet := range rc.SelectedHostSubnets {
 		hostsubnetnamec := hostsubnetname
 		hostsubnetc := hostsubnet.DeepCopy()
 		go func() {
-			if !strset.New(rc.finallyAssignedIPsByNode[hostsubnetnamec]...).IsEqual(strset.New(hostsubnetc.EgressIPs...)) {
-				hostsubnetc.EgressIPs = rc.finallyAssignedIPsByNode[hostsubnetnamec]
+			if !strset.New(rc.FinallyAssignedIPsByNode[hostsubnetnamec]...).IsEqual(strset.New(hostsubnetc.EgressIPs...)) {
+				hostsubnetc.EgressIPs = rc.FinallyAssignedIPsByNode[hostsubnetnamec]
 				err := r.GetClient().Update(context.TODO(), hostsubnetc, &client.UpdateOptions{})
 				if err != nil {
-					log.Error(err, "unable to update", "hostsubnet ", hostsubnetc, "with ips", rc.finallyAssignedIPsByNode[hostsubnetnamec])
+					log.Error(err, "unable to update", "hostsubnet ", hostsubnetc, "with ips", rc.FinallyAssignedIPsByNode[hostsubnetnamec])
 					results <- err
 					return
 				}
@@ -126,18 +126,18 @@ func (r *ReconcileEgressIPAM) reconcileHSAssignedIPs(rc *reconcileContext) error
 		}()
 	}
 	result := &multierror.Error{}
-	for range rc.selectedHostSubnets {
+	for range rc.SelectedHostSubnets {
 		multierror.Append(result, <-results)
 	}
 	return result.ErrorOrNil()
 }
 
 // ensures that hostsubnets have the correct CIDR
-func (r *ReconcileEgressIPAM) assignCIDRsToHostSubnets(rc *reconcileContext) error {
-	for cidr, nodes := range rc.selectedNodesByCIDR {
+func (r *ReconcileEgressIPAM) assignCIDRsToHostSubnets(rc *ReconcileContext) error {
+	for cidr, nodes := range rc.SelectedNodesByCIDR {
 		cidrs := []string{cidr}
 		for _, node := range nodes {
-			hostsubnet := rc.allHostSubnets[node]
+			hostsubnet := rc.AllHostSubnets[node]
 			if !strset.New(hostsubnet.EgressCIDRs...).IsEqual(strset.New(cidrs...)) {
 				hostsubnet.EgressCIDRs = cidrs
 				err := r.GetClient().Update(context.TODO(), &hostsubnet, &client.UpdateOptions{})
@@ -151,7 +151,7 @@ func (r *ReconcileEgressIPAM) assignCIDRsToHostSubnets(rc *reconcileContext) err
 	return nil
 }
 
-func (r *ReconcileEgressIPAM) getAllHostSubnets(thiscontext *reconcileContext) (map[string]ocpnetv1.HostSubnet, error) {
+func (r *ReconcileEgressIPAM) getAllHostSubnets(thiscontext *ReconcileContext) (map[string]ocpnetv1.HostSubnet, error) {
 	hostSubnetList := &ocpnetv1.HostSubnetList{}
 	err := r.GetClient().List(context.TODO(), hostSubnetList, &client.ListOptions{})
 	if err != nil {
@@ -165,10 +165,10 @@ func (r *ReconcileEgressIPAM) getAllHostSubnets(thiscontext *reconcileContext) (
 	return selectedHostSubnets, nil
 }
 
-func (r *ReconcileEgressIPAM) removeHostsubnetAssignedIPsAndCIDRs(rc *reconcileContext) error {
+func (r *ReconcileEgressIPAM) removeHostsubnetAssignedIPsAndCIDRs(rc *ReconcileContext) error {
 	results := make(chan error)
 	defer close(results)
-	for _, hostsubnet := range rc.selectedHostSubnets {
+	for _, hostsubnet := range rc.SelectedHostSubnets {
 		hostsubnetc := hostsubnet.DeepCopy()
 		go func() {
 			if !reflect.DeepEqual(hostsubnetc.EgressCIDRs, []string{}) || !reflect.DeepEqual(hostsubnetc.EgressIPs, []string{}) {
@@ -186,7 +186,7 @@ func (r *ReconcileEgressIPAM) removeHostsubnetAssignedIPsAndCIDRs(rc *reconcileC
 		}()
 	}
 	result := &multierror.Error{}
-	for range rc.selectedHostSubnets {
+	for range rc.SelectedHostSubnets {
 		multierror.Append(result, <-results)
 	}
 	return result.ErrorOrNil()
