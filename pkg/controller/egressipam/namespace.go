@@ -19,7 +19,7 @@ type enqueForSelectedEgressIPAMNamespace struct {
 	r *ReconcileEgressIPAM
 }
 
-// trigger a egressIPAM reconcile event for those egressIPAM objcts that reference this node
+// trigger a EgressIPAM reconcile event for those EgressIPAM objcts that reference this node
 func (e *enqueForSelectedEgressIPAMNamespace) Create(evt event.CreateEvent, q workqueue.RateLimitingInterface) {
 	egressIPAMNAme, ok := evt.Meta.GetAnnotations()[NamespaceAnnotation]
 	if ok {
@@ -58,7 +58,7 @@ func (e *enqueForSelectedEgressIPAMNamespace) Generic(evt event.GenericEvent, q 
 	return
 }
 
-func (r *ReconcileEgressIPAM) getReferringNamespaces(rc *reconcileContext) (referringNmespaces map[string]corev1.Namespace, unassignedNamespaces []corev1.Namespace, assignedNamespaces []corev1.Namespace, err error) {
+func (r *ReconcileEgressIPAM) getReferringNamespaces(rc *ReconcileContext) (referringNmespaces map[string]corev1.Namespace, unassignedNamespaces []corev1.Namespace, assignedNamespaces []corev1.Namespace, err error) {
 	namespaceList := &corev1.NamespaceList{}
 	err = r.GetClient().List(context.TODO(), namespaceList, &client.ListOptions{})
 	if err != nil {
@@ -69,7 +69,7 @@ func (r *ReconcileEgressIPAM) getReferringNamespaces(rc *reconcileContext) (refe
 	unassignedNamespaces = []corev1.Namespace{}
 	assignedNamespaces = []corev1.Namespace{}
 	for _, namespace := range namespaceList.Items {
-		if value, ok := namespace.GetAnnotations()[NamespaceAnnotation]; ok && value == rc.egressIPAM.GetName() {
+		if value, ok := namespace.GetAnnotations()[NamespaceAnnotation]; ok && value == rc.EgressIPAM.GetName() {
 			referringNamespaces[namespace.GetName()] = namespace
 			if _, ok := namespace.GetAnnotations()[NamespaceAssociationAnnotation]; ok {
 				assignedNamespaces = append(assignedNamespaces, namespace)
@@ -83,25 +83,25 @@ func (r *ReconcileEgressIPAM) getReferringNamespaces(rc *reconcileContext) (refe
 	return referringNamespaces, unassignedNamespaces, assignedNamespaces, nil
 }
 
-// returns a map if CIDRs and array of IPs CIDR are from the egressIPAM, IPs are currently assigned IPs.
+// returns a map if CIDRs and array of IPs CIDR are from the EgressIPAM, IPs are currently assigned IPs.
 // IPs in an array are supposed to belong the the CIDR, but no check is currently in place to ensure it.
-// it expects that each namespace passed as parametr has exaclty the n IPs assigned where n is the number of CIDRs in egressIPAM
-func sortIPsByCIDR(rc *reconcileContext) (map[string][]net.IP, error) {
+// it expects that each namespace passed as parametr has exaclty the n IPs assigned where n is the number of CIDRs in EgressIPAM
+func sortIPsByCIDR(rc *ReconcileContext) (map[string][]net.IP, error) {
 	IPsByCIDR := map[string][]net.IP{}
-	for _, cidr := range rc.cIDRs {
+	for _, cidr := range rc.CIDRs {
 		IPsByCIDR[cidr] = []net.IP{}
 	}
-	for _, namespace := range rc.initiallyAssignedNamespaces {
+	for _, namespace := range rc.InitiallyAssignedNamespaces {
 		if value, ok := namespace.GetAnnotations()[NamespaceAssociationAnnotation]; ok {
 			ipstrings := strings.Split(value, ",")
-			for i, cidr := range rc.cIDRs {
+			for i, cidr := range rc.CIDRs {
 				IP := net.ParseIP(ipstrings[i])
 				if IP == nil {
 					err := errors.New("unable to parse IP: " + ipstrings[i] + " in namespace: " + namespace.GetName())
 					log.Error(err, "unable to parse ", "IP", ipstrings[i], "for namespace", namespace.GetName())
 					return map[string][]net.IP{}, err
 				}
-				if !rc.netCIDRByCIDR[cidr].Contains(IP) {
+				if !rc.NetCIDRByCIDR[cidr].Contains(IP) {
 					err := errors.New("IP: " + IP.String() + " does not belong to CIDR: " + cidr + " for namespace" + namespace.GetName())
 					log.Error(err, "assigned ", "IP", IP.String(), "does not belong to CIDR", cidr, "for namespace", namespace.GetName())
 					return map[string][]net.IP{}, err
@@ -113,10 +113,10 @@ func sortIPsByCIDR(rc *reconcileContext) (map[string][]net.IP, error) {
 	return IPsByCIDR, nil
 }
 
-func (r *ReconcileEgressIPAM) removeNamespaceAssignedIPs(rc *reconcileContext) error {
+func (r *ReconcileEgressIPAM) removeNamespaceAssignedIPs(rc *ReconcileContext) error {
 	results := make(chan error)
 	defer close(results)
-	for _, namespace := range rc.initiallyAssignedNamespaces {
+	for _, namespace := range rc.InitiallyAssignedNamespaces {
 		namespacec := namespace.DeepCopy()
 		go func() {
 			delete(namespacec.GetAnnotations(), NamespaceAssociationAnnotation)
@@ -131,7 +131,7 @@ func (r *ReconcileEgressIPAM) removeNamespaceAssignedIPs(rc *reconcileContext) e
 		}()
 	}
 	var result *multierror.Error
-	for range rc.initiallyAssignedNamespaces {
+	for range rc.InitiallyAssignedNamespaces {
 		multierror.Append(result, <-results)
 	}
 	return result.ErrorOrNil()

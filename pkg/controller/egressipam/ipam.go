@@ -16,20 +16,20 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// func getReservedIPsByCIDR(egressIPAM *redhatcopv1alpha1.EgressIPAM) map[string][]net.IP {
-// 	reservedIPsByCIDR := map[string][]net.IP{}
-// 	for _, cidrAssignment := range egressIPAM.Spec.CIDRAssignments {
+// func getReservedIPsByCIDR(EgressIPAM *redhatcopv1alpha1.EgressIPAM) map[string][]net.IP {
+// 	ReservedIPsByCIDR := map[string][]net.IP{}
+// 	for _, cidrAssignment := range EgressIPAM.Spec.CIDRAssignments {
 // 		ips := []net.IP{}
 // 		for _, ipstr := range cidrAssignment.ReservedIPs {
 // 			ips = append(ips, net.ParseIP(ipstr))
 // 		}
-// 		reservedIPsByCIDR[cidrAssignment.CIDR] = ips
+// 		ReservedIPsByCIDR[cidrAssignment.CIDR] = ips
 // 	}
-// 	return reservedIPsByCIDR
+// 	return ReservedIPsByCIDR
 // }
 
 // Assigns ips to unassigned namespaces and updates them
-func (r *ReconcileEgressIPAM) assignIPsToNamespaces(rc *reconcileContext) ([]corev1.Namespace, error) {
+func (r *ReconcileEgressIPAM) assignIPsToNamespaces(rc *ReconcileContext) ([]corev1.Namespace, error) {
 	IPsByCIDR, err := sortIPsByCIDR(rc)
 	if err != nil {
 		log.Error(err, "unable to sort assignedIPs by CIDR")
@@ -49,9 +49,9 @@ func (r *ReconcileEgressIPAM) assignIPsToNamespaces(rc *reconcileContext) ([]cor
 	log.V(1).Info("adding always excluded network IPs ", "IPs by CIDR", IPsByCIDR)
 
 	// add reserved ips
-	//reservedIPsByCIDR := getReservedIPsByCIDR(egressIPAM)
+	//ReservedIPsByCIDR := getReservedIPsByCIDR(EgressIPAM)
 	for cidr := range IPsByCIDR {
-		IPsByCIDR[cidr] = append(IPsByCIDR[cidr], rc.reservedIPsByCIDR[cidr]...)
+		IPsByCIDR[cidr] = append(IPsByCIDR[cidr], rc.ReservedIPsByCIDR[cidr]...)
 	}
 	log.V(1).Info("adding reserved IPs ", "IPs by CIDR", IPsByCIDR)
 
@@ -81,7 +81,7 @@ func (r *ReconcileEgressIPAM) assignIPsToNamespaces(rc *reconcileContext) ([]cor
 				return []corev1.Namespace{}, err
 			}
 			IPsByCIDR[cidr] = append(IPsByCIDR[cidr], ipmath.DeltaIP(base, 1), ipmath.DeltaIP(base, 2), ipmath.DeltaIP(base, 3))
-			IPsByCIDR[cidr] = append(IPsByCIDR[cidr], rc.awsUsedIPsByCIDR[cidr]...)
+			IPsByCIDR[cidr] = append(IPsByCIDR[cidr], (*r.cloudProvider).GetUsedIPs(rc)[cidr]...)
 		}
 	}
 	log.V(1).Info("adding cloud infrastructure reserved IPs ", "IPs by CIDR", IPsByCIDR)
@@ -95,7 +95,7 @@ func (r *ReconcileEgressIPAM) assignIPsToNamespaces(rc *reconcileContext) ([]cor
 	}
 	log.V(1).Info("sorted reserved IPs ", "IPs by CIDR", IPsByCIDR)
 	newlyAssignedNamespaces := []corev1.Namespace{}
-	for _, unamespace := range rc.unAssignedNamespaces {
+	for _, unamespace := range rc.UnAssignedNamespaces {
 		namespace := unamespace.DeepCopy()
 		newIPsByCIDRs, err := getNextAvailableIPs(IPsByCIDR)
 		if err != nil {
@@ -103,7 +103,7 @@ func (r *ReconcileEgressIPAM) assignIPsToNamespaces(rc *reconcileContext) ([]cor
 			return []corev1.Namespace{}, err
 		}
 		ipstrings := []string{}
-		for _, cidr := range rc.cIDRs {
+		for _, cidr := range rc.CIDRs {
 			ipstrings = append(ipstrings, newIPsByCIDRs[cidr].String())
 		}
 		log.Info("ips assigned to", "namespace", namespace.GetName(), "ips", ipstrings)
@@ -195,7 +195,7 @@ func sortIPs(ips []net.IP) []net.IP {
 }
 
 // returns a map with nodes and egress IPs that have been assigned to them. This should preserve IPs that are already assigned.
-func (r *ReconcileEgressIPAM) assignIPsToNodes(rc *reconcileContext) (map[string][]string, error) {
+func (r *ReconcileEgressIPAM) assignIPsToNodes(rc *ReconcileContext) (map[string][]string, error) {
 	// 1. get assignedIPsToNodesByCIDR
 	// 2. get assignedIPsToNamespacesByCIDR
 	// 3. calculate toBeAssignedIPsByCIDR
@@ -208,13 +208,13 @@ func (r *ReconcileEgressIPAM) assignIPsToNodes(rc *reconcileContext) (map[string
 	assignedIPsToNodesByCIDR := map[string][]string{}
 	assignedIPsToNamespaceByCIDR := map[string][]string{}
 	toBeAssignedToNodesIPsByCIDR := map[string][]string{}
-	for _, cidr := range rc.cIDRs {
+	for _, cidr := range rc.CIDRs {
 		assignedIPsToNodesByCIDR[cidr] = []string{}
 		assignedIPsToNamespaceByCIDR[cidr] = []string{}
 		toBeAssignedToNodesIPsByCIDR[cidr] = []string{}
 	}
 	// 1. get assignedIPsToNodesByCIDR
-	for _, ipsbn := range rc.initiallyAssignedIPsByNode {
+	for _, ipsbn := range rc.InitiallyAssignedIPsByNode {
 		for cidrstr := range assignedIPsToNodesByCIDR {
 			_, cidr, err := net.ParseCIDR(cidrstr)
 			if err != nil {
@@ -230,7 +230,7 @@ func (r *ReconcileEgressIPAM) assignIPsToNodes(rc *reconcileContext) (map[string
 	}
 	log.V(1).Info("", "assignedIPsToNodesByCIDR: ", assignedIPsToNodesByCIDR)
 	// 2. get assignedIPsToNamespacesByCIDR
-	for _, namespace := range rc.finallyAssignedNamespaces {
+	for _, namespace := range rc.FinallyAssignedNamespaces {
 		ipsstr, ok := namespace.GetAnnotations()[NamespaceAssociationAnnotation]
 		if !ok {
 			return map[string][]string{}, errors.New("unable to find ips in namespace" + namespace.GetName())
@@ -268,7 +268,7 @@ func (r *ReconcileEgressIPAM) assignIPsToNodes(rc *reconcileContext) (map[string
 	newAssignedIPsByNode := map[string][]string{}
 	for _, assignedIPs := range assignedIPsToNodesByCIDR {
 		for _, assignedIP := range assignedIPs {
-			for node, initiallyAssignedToNodeIPs := range rc.initiallyAssignedIPsByNode {
+			for node, initiallyAssignedToNodeIPs := range rc.InitiallyAssignedIPsByNode {
 				for _, initiallyAssignedToNodeIP := range initiallyAssignedToNodeIPs {
 					if assignedIP == initiallyAssignedToNodeIP {
 						newAssignedIPsByNode[node] = append(newAssignedIPsByNode[node], assignedIP)
@@ -281,7 +281,7 @@ func (r *ReconcileEgressIPAM) assignIPsToNodes(rc *reconcileContext) (map[string
 	log.V(1).Info("new", "assignedIPsByNode: ", newAssignedIPsByNode)
 
 	// 6. get NodesByCIDR
-	nodesByCIDR := rc.selectedNodesByCIDR
+	nodesByCIDR := rc.SelectedNodesByCIDR
 
 	log.V(1).Info("", "nodesByCIDR: ", nodesByCIDR)
 

@@ -100,14 +100,14 @@ func (r *ReconcileEgressIPAM) getNode(hostsubnet *ocpnetv1.HostSubnet) (corev1.N
 	return *node, nil
 }
 
-func (r *ReconcileEgressIPAM) getSelectedNodes(rc *reconcileContext) (map[string]corev1.Node, error) {
-	selector, err := metav1.LabelSelectorAsSelector(&rc.egressIPAM.Spec.NodeSelector)
+func (r *ReconcileEgressIPAM) getSelectedNodes(rc *ReconcileContext) (map[string]corev1.Node, error) {
+	selector, err := metav1.LabelSelectorAsSelector(&rc.EgressIPAM.Spec.NodeSelector)
 	if err != nil {
-		log.Error(err, "unable to create selector from label selector", "selector", rc.egressIPAM.Spec.NodeSelector)
+		log.Error(err, "unable to create selector from label selector", "selector", rc.EgressIPAM.Spec.NodeSelector)
 		return map[string]corev1.Node{}, err
 	}
 	selectedNodes := map[string]corev1.Node{}
-	for nodename, node := range rc.allNodes {
+	for nodename, node := range rc.AllNodes {
 		if selector.Matches(labels.Set(node.GetLabels())) {
 			selectedNodes[nodename] = node
 		}
@@ -115,24 +115,24 @@ func (r *ReconcileEgressIPAM) getSelectedNodes(rc *reconcileContext) (map[string
 	return selectedNodes, nil
 }
 
-func (r *ReconcileEgressIPAM) getAssignedIPsByNode(rc *reconcileContext) map[string][]string {
+func (r *ReconcileEgressIPAM) getAssignedIPsByNode(rc *ReconcileContext) map[string][]string {
 	assignedIPsByNode := map[string][]string{}
-	for hostSubnetName, hostsubnet := range rc.selectedHostSubnets {
+	for hostSubnetName, hostsubnet := range rc.SelectedHostSubnets {
 		assignedIPsByNode[hostSubnetName] = GetHostHostSubnetEgressIPsAsStrings(hostsubnet.EgressIPs)
 	}
 	return assignedIPsByNode
 }
 
-func (r *ReconcileEgressIPAM) getNodesIPsByCIDR(rc *reconcileContext) (map[string][]net.IP, error) {
+func (r *ReconcileEgressIPAM) getNodesIPsByCIDR(rc *ReconcileContext) (map[string][]net.IP, error) {
 	nodesIPsByCIDR := map[string][]net.IP{}
-	for nodename := range rc.allNodes {
-		hostsubnet, ok := rc.allHostSubnets[nodename]
+	for nodename := range rc.AllNodes {
+		hostsubnet, ok := rc.AllHostSubnets[nodename]
 		if !ok {
 			return map[string][]net.IP{}, errors.New("unable to find hostsubnet for node:" + nodename)
 		}
-		for _, cidr := range rc.cIDRs {
+		for _, cidr := range rc.CIDRs {
 			ip := net.ParseIP(hostsubnet.HostIP)
-			if rc.netCIDRByCIDR[cidr].Contains(ip) {
+			if rc.NetCIDRByCIDR[cidr].Contains(ip) {
 				nodesIPsByCIDR[cidr] = append(nodesIPsByCIDR[cidr], ip)
 			}
 		}
@@ -140,7 +140,7 @@ func (r *ReconcileEgressIPAM) getNodesIPsByCIDR(rc *reconcileContext) (map[strin
 	return nodesIPsByCIDR, nil
 }
 
-func (r *ReconcileEgressIPAM) getAllNodes(rc *reconcileContext) (map[string]corev1.Node, error) {
+func (r *ReconcileEgressIPAM) getAllNodes(rc *ReconcileContext) (map[string]corev1.Node, error) {
 	nodeList := &corev1.NodeList{}
 	err := r.GetClient().List(context.TODO(), nodeList, &client.ListOptions{})
 	if err != nil {
