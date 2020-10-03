@@ -8,20 +8,21 @@ require (
 	github.com/jpillora/ipmath v0.0.0-20180121110145-ebede80a2ab9
 	github.com/openshift/api v3.9.1-0.20190924102528-32369d4db2ad+incompatible
 	github.com/openshift/cloud-credential-operator v0.0.0-20200303191255-cc686af9c1b9
-	github.com/openshift/machine-api-operator v0.2.1-0.20200402110321-4f3602b96da3
+	github.com/openshift/machine-api-operator v0.2.1-0.20200926044412-b7d860f8074c
 	github.com/operator-framework/operator-sdk v0.14.0
 	github.com/redhat-cop/operator-utils v0.1.1
 	github.com/scylladb/go-set v1.0.2
 	github.com/spf13/pflag v1.0.5
-	k8s.io/api v0.18.0-rc.1
-	k8s.io/apimachinery v0.18.0-rc.1
+	k8s.io/api v0.19.0
+	k8s.io/apimachinery v0.19.0
 	k8s.io/client-go v12.0.0+incompatible
-	sigs.k8s.io/controller-runtime v0.5.2
+	sigs.k8s.io/controller-runtime v0.6.2
 
 )
 
 // Pinned to kubernetes-1.16.2
 replace (
+	github.com/docker/docker => github.com/moby/moby v0.7.3-0.20190826074503-38ab9da00309 // Required by Helm
 	k8s.io/api => k8s.io/api v0.0.0-20191016110408-35e52d86657a
 	k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.0.0-20191016113550-5357c4baaf65
 	k8s.io/apimachinery => k8s.io/apimachinery v0.0.0-20191004115801-a2eda9f80ab8
@@ -43,6 +44,6 @@ replace (
 	k8s.io/legacy-cloud-providers => k8s.io/legacy-cloud-providers v0.0.0-20191016115753-cf0698c3a16b
 	k8s.io/metrics => k8s.io/metrics v0.0.0-20191016113814-3b1a734dba6e
 	k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.0.0-20191016112829-06bb3c9d77c9
+	sigs.k8s.io/cluster-api-provider-aws => github.com/openshift/cluster-api-provider-aws v0.2.1-0.20200929152424-eab2e087f366
+	sigs.k8s.io/cluster-api-provider-azure => github.com/openshift/cluster-api-provider-azure v0.1.0-alpha.3.0.20200929220456-04e680e51d03
 )
-
-replace github.com/docker/docker => github.com/moby/moby v0.7.3-0.20190826074503-38ab9da00309 // Required by Helm
