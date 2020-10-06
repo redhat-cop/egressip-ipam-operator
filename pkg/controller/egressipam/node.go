@@ -118,7 +118,7 @@ func (r *ReconcileEgressIPAM) getSelectedNodes(rc *reconcileContext) (map[string
 func (r *ReconcileEgressIPAM) getAssignedIPsByNode(rc *reconcileContext) map[string][]string {
 	assignedIPsByNode := map[string][]string{}
 	for hostSubnetName, hostsubnet := range rc.selectedHostSubnets {
-		assignedIPsByNode[hostSubnetName] = hostsubnet.EgressIPs
+		assignedIPsByNode[hostSubnetName] = GetHostHostSubnetEgressIPsAsStrings(hostsubnet.EgressIPs)
 	}
 	return assignedIPsByNode
 }
