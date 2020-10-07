@@ -129,7 +129,7 @@ func (r *ReconcileNamespace) cleanUpNamespaceAndNetNamespace(namespace *corev1.N
 		return err
 	}
 	if !reflect.DeepEqual(netNamespace.EgressIPs, []string{}) {
-		netNamespace.EgressIPs = []string{}
+		netNamespace.EgressIPs = []ocpnetv1.NetNamespaceEgressIP{}
 		err := r.GetClient().Update(context.TODO(), netNamespace, &client.UpdateOptions{})
 		if err != nil {
 			log.Error(err, "unable to update ", "netnamespace", netNamespace.GetName())
