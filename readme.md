@@ -21,7 +21,8 @@ spec:
       - "192.159.0.5"
   topologyLabel: egressGateway
   nodeSelector:
-    node-role.kubernetes.io/worker: ""
+    matchLabels:
+      node-role.kubernetes.io/worker: ""
 ```
 
 This EgressIPAM specifies that all nodes that comply with the specified node selector and that also have labels `egressGateway: "true"` will be assigned egressIP from the specified CIDR.
@@ -116,7 +117,8 @@ spec:
       - "192.159.0.5"
   topologyLabel: egressGateway
   nodeSelector:
-    node-role.kubernetes.io/worker: ""
+    matchLabels:
+      node-role.kubernetes.io/worker: ""
 ```
 
 ## Deploying the Operator
