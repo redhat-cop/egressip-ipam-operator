@@ -352,8 +352,8 @@ func (r *ReconcileEgressIPAM) Reconcile(request reconcile.Request) (reconcile.Re
 	// 2. sort the nodes by node_label/value so to have a maps of CIDR:[]node
 	// 3. reconcile the hostsubnets assigning CIDRs as per the map created at #2
 
-	// baremetal + oVirt/RHV
-	if (infrastrcuture.Status.Platform == ocpconfigv1.NonePlatformType || infrastrcuture.Status.Platform == ocpconfigv1.OvirtPlatformType) {
+	// baremetal + vsphere + oVirt/RHV
+	if (infrastrcuture.Status.Platform == ocpconfigv1.NonePlatformType || infrastrcuture.Status.Platform == ocpconfigv1.VSpherePlatformType || infrastrcuture.Status.Platform == ocpconfigv1.OvirtPlatformType) {
 		// nodesByCIDR, _, err := r.getSelectedNodesByCIDR(cr)
 		// if err != nil {
 		// 	log.Error(err, "unable to get nodes selected by ", "instance", instance)

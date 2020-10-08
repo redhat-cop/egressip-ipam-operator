@@ -9,6 +9,7 @@ spec:
       CIDR: 192.169.0.0/24
   topologyLabel: egressGateway
   nodeSelector:
-    node-role.kubernetes.io/worker: ""
+    matchLabels:
+      node-role.kubernetes.io/worker: ""
     
 
