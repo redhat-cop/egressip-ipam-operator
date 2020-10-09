@@ -77,9 +77,16 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		log.Error(err, "Unable to retrieve current cluster infrastructure")
 		return err
 	}
-	if infrastructure.Status.Platform == ocpconfigv1.AWSPlatformType {
+	if runningOnAws(infrastructure) {
+		// retrieves the Region from the infrastructure and injects it to the CloudProvider
+		err := (*r.(*ReconcileEgressIPAM).cloudProvider).FailureRegion(infrastructure.Status.PlatformStatus.AWS.Region)
+		if err != nil {
+			log.Error(err, "unable to create credential request")
+			return err
+		}
+
 		// create credential request
-		err := (*r.(*ReconcileEgressIPAM).cloudProvider).CreateCredentialRequest()
+		err = (*r.(*ReconcileEgressIPAM).cloudProvider).CreateCredentialRequest()
 		if err != nil {
 			log.Error(err, "unable to create credential request")
 			return err
@@ -349,9 +356,9 @@ func (r *ReconcileEgressIPAM) Reconcile(request reconcile.Request) (reconcile.Re
 		return r.ManageError(instance, err)
 	}
 
-	infrastrcuture, err := r.getInfrastructure()
+	infrastructure, err := r.getInfrastructure()
 	if err != nil {
-		log.Error(err, "unable to retrieve cluster infrastrcuture information")
+		log.Error(err, "unable to retrieve cluster infrastructure information")
 		return r.ManageError(instance, err)
 	}
 
@@ -361,7 +368,7 @@ func (r *ReconcileEgressIPAM) Reconcile(request reconcile.Request) (reconcile.Re
 	// 3. reconcile the hostsubnets assigning CIDRs as per the map created at #2
 
 	// baremetal + vsphere
-	if (infrastrcuture.Status.Platform == ocpconfigv1.NonePlatformType || infrastrcuture.Status.Platform == ocpconfigv1.VSpherePlatformType) {
+	if runningOnSupportedPlatforms(infrastructure) {
 		// nodesByCIDR, _, err := r.getSelectedNodesByCIDR(cr)
 		// if err != nil {
 		// 	log.Error(err, "unable to get nodes selected by ", "instance", instance)
@@ -384,7 +391,7 @@ func (r *ReconcileEgressIPAM) Reconcile(request reconcile.Request) (reconcile.Re
 	// 6. reconcile assigned IP to nodes with secondary IPs assigned to AWS machines
 	// 7. reconcile assigned IP to nodes with correcponing hostsubnet
 
-	if infrastrcuture.Status.Platform == ocpconfigv1.AWSPlatformType {
+	if runningOnAws(infrastructure) {
 		assignedIPsByNode := r.getAssignedIPsByNode(rc)
 		rc.InitiallyAssignedIPsByNode = assignedIPsByNode
 
@@ -515,7 +522,7 @@ func (r *ReconcileEgressIPAM) manageCleanUpLogic(instance *redhatcopv1alpha1.Egr
 		log.Error(err, "unable to retrieve cluster infrastrcuture information")
 		return err
 	}
-	if infrastrcuture.Status.Platform == ocpconfigv1.AWSPlatformType {
+	if infrastrcuture.Status.PlatformStatus != nil && infrastrcuture.Status.PlatformStatus.Type == ocpconfigv1.AWSPlatformType {
 		return (*r.cloudProvider).RemoveAssignedIPs(rc)
 	}
 
@@ -708,7 +715,7 @@ func (r *ReconcileEgressIPAM) loadReconcileContext(egressIPAM *redhatcopv1alpha1
 	}
 
 	//aws
-	if infrastrcuture.Status.Platform == ocpconfigv1.AWSPlatformType {
+	if infrastrcuture.Status.PlatformStatus != nil && infrastrcuture.Status.PlatformStatus.Type == ocpconfigv1.AWSPlatformType {
 		err := (*r.cloudProvider).HarvestCloudData(rc)
 		if err != nil {
 			log.Error(err, "unable to retrieve the cloud information")
@@ -717,4 +724,16 @@ func (r *ReconcileEgressIPAM) loadReconcileContext(egressIPAM *redhatcopv1alpha1
 	}
 
 	return rc, nil
+}
+
+func runningOnSupportedPlatforms(infrastructure *ocpconfigv1.Infrastructure) bool {
+	return runningOnAws(infrastructure) || runningOnVSphere(infrastructure)
+}
+
+func runningOnAws(infrastructure *ocpconfigv1.Infrastructure) bool {
+	return infrastructure.Status.PlatformStatus != nil && infrastructure.Status.PlatformStatus.Type == ocpconfigv1.AWSPlatformType
+}
+
+func runningOnVSphere(infrastructure *ocpconfigv1.Infrastructure) bool {
+	return infrastructure.Status.PlatformStatus != nil && infrastructure.Status.PlatformStatus.Type == ocpconfigv1.VSpherePlatformType
 }

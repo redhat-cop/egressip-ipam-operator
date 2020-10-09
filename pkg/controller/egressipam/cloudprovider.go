@@ -8,6 +8,9 @@ const (
 )
 
 type Cloudprovider interface {
+	// FailureRegion defines the failure region (in AWS "Region") of the cluster within the cloud providers infrastructure.
+	FailureRegion(region string) error
+
 	// CreateCredentialRequest will create a CredentialOperator request for the cloud provider
 	CreateCredentialRequest() error
 
