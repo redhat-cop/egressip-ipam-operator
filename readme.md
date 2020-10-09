@@ -121,6 +121,27 @@ spec:
       node-role.kubernetes.io/worker: ""
 ```
 
+## Support for oVirt / Red Hat Virtualization
+
+Example EgressIPAM configuration:
+
+```yaml
+apiVersion: redhatcop.redhat.io/v1alpha1
+kind: EgressIPAM
+metadata:
+  name: egressipam-rhv
+spec:
+  cidrAssignments:
+    - labelValue: "true"
+      CIDR: 192.169.0.0/24
+      reservedIPs:
+      - "192.159.0.5"
+  topologyLabel: egressGateway
+  nodeSelector:
+    matchLabels:
+      node-role.kubernetes.io/worker: ""
+```
+
 ## Deploying the Operator
 
 This is a cluster-level operator that you can deploy in any namespace, `egressip-ipam-operator` is recommended.
