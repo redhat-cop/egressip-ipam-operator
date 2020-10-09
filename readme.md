@@ -21,7 +21,8 @@ spec:
       - "192.159.0.5"
   topologyLabel: egressGateway
   nodeSelector:
-    node-role.kubernetes.io/worker: ""
+    matchLabels:
+      node-role.kubernetes.io/worker: ""
 ```
 
 This EgressIPAM specifies that all nodes that comply with the specified node selector and that also have labels `egressGateway: "true"` will be assigned egressIP from the specified CIDR.
@@ -81,6 +82,44 @@ When a namespace with the opt-in annotation is created, the following happens:
 3. one node per zone is selected to carry the egressIP
 4. the relative aws machines are assigned the additional IP on the main interface (support for secondary interfaces in not available)
 5. the relative `hostsubnets` are updated to reflect the assigned IP, the `egressIP` field is updated.
+
+## Support for vSphere
+
+You can use the egressip-ipam-operator on your vSphere installation assuming that the nodes you want to use are labelled according to the `topologyLabel`. You can label them manually, or by changing the MachineSet configuration:
+
+```yaml
+apiVersion: machine.openshift.io/v1beta1
+kind: MachineSet
+metadata:
+  {...}
+spec:
+  template:
+    metadata:
+      {...}
+    spec:
+      metadata:
+        labels:
+          egressGateway: 'true'
+```
+
+This example MachineSet object lets the [machine-api-operator](https://github.com/openshift/machine-api-operator) label all newly created nodes with the label `egressGateway: 'true'` which can then be selected by the egressip-ipam-operator with this example EgressIPAM configuration:
+
+```yaml
+apiVersion: redhatcop.redhat.io/v1alpha1
+kind: EgressIPAM
+metadata:
+  name: egressipam-vsphere
+spec:
+  cidrAssignments:
+    - labelValue: "true"
+      CIDR: 192.169.0.0/24
+      reservedIPs:
+      - "192.159.0.5"
+  topologyLabel: egressGateway
+  nodeSelector:
+    matchLabels:
+      node-role.kubernetes.io/worker: ""
+```
 
 ## Deploying the Operator
 
