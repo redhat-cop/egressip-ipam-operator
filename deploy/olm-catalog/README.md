@@ -36,6 +36,13 @@ operator-courier --verbose verify --ui_validate_io deploy/olm-catalog/egressip-i
 
 ## Test new CSV
 
+One new way to test is the following:
+
+```shell
+oc new-project egressip-ipam-operator
+operator-sdk run packagemanifests --operator-version ${new_version} --olm-namespace openshift-operator-lifecycle-manager --operator-namespace egressip-ipam-operator --install-mode=OwnNamespace=egressip-ipam-operator
+```
+
 Test what the operator would look like in OperatorHub, by going to this [site](https://operatorhub.io/preview) and paste the csv/
 
 Test the operator deployment process from OperatorHub
