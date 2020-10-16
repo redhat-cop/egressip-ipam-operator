@@ -215,8 +215,12 @@ func (r *ReconcileEgressIPAM) createAWSCredentialRequest() error {
 			},
 		},
 	}
-
-	err = r.CreateOrUpdateResource(nil, "", &request)
+	c, err := r.getDirectClient()
+	if err != nil {
+		log.Error(err, "unable to create direct client")
+		return err
+	}
+	err = r.createOrUpdateResourceWithClient(c, nil, "", &request)
 	if err != nil {
 		log.Error(err, "unable to create or update ", "credential request", request)
 		return err

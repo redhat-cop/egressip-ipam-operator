@@ -14,12 +14,15 @@ import (
 	"github.com/operator-framework/operator-sdk/pkg/k8sutil"
 	redhatcopv1alpha1 "github.com/redhat-cop/egressip-ipam-operator/pkg/apis/redhatcop/v1alpha1"
 	"github.com/redhat-cop/operator-utils/pkg/util"
+	"github.com/redhat-cop/operator-utils/pkg/util/apis"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -71,6 +74,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		log.Error(err, "Unable to retrieve current cluster infrastructure")
 		return err
 	}
+
 	if infrastructure.Status.Platform == ocpconfigv1.AWSPlatformType {
 		// create credential request
 		err := reconcileEgressIPAM.createAWSCredentialRequest()
@@ -245,6 +249,15 @@ type ReconcileEgressIPAM struct {
 	creds          corev1.Secret
 }
 
+func (r *ReconcileEgressIPAM) getDirectClient() (client.Client, error) {
+	client, err := client.New(r.GetRestConfig(), client.Options{})
+	if err != nil {
+		log.Error(err, "unable to create client", "with restconfig", r.GetRestConfig())
+		return nil, err
+	}
+	return client, nil
+}
+
 // Reconcile reads that state of the cluster for a EgressIPAM object and makes changes based on the state read
 // and what is in the EgressIPAM.Spec
 // TODO(user): Modify this Reconcile function to implement your Controller logic.  This example creates
@@ -353,7 +366,7 @@ func (r *ReconcileEgressIPAM) Reconcile(request reconcile.Request) (reconcile.Re
 	// 3. reconcile the hostsubnets assigning CIDRs as per the map created at #2
 
 	// baremetal + vsphere + oVirt/RHV
-	if (infrastrcuture.Status.Platform == ocpconfigv1.NonePlatformType || infrastrcuture.Status.Platform == ocpconfigv1.VSpherePlatformType || infrastrcuture.Status.Platform == ocpconfigv1.OvirtPlatformType) {
+	if infrastrcuture.Status.Platform == ocpconfigv1.NonePlatformType || infrastrcuture.Status.Platform == ocpconfigv1.VSpherePlatformType || infrastrcuture.Status.Platform == ocpconfigv1.OvirtPlatformType {
 		// nodesByCIDR, _, err := r.getSelectedNodesByCIDR(cr)
 		// if err != nil {
 		// 	log.Error(err, "unable to get nodes selected by ", "instance", instance)
@@ -808,4 +821,47 @@ func (r *ReconcileEgressIPAM) loadReconcileContext(egressIPAM *redhatcopv1alpha1
 	}
 
 	return rc, nil
+}
+
+func (r *ReconcileEgressIPAM) createOrUpdateResourceWithClient(c client.Client, owner apis.Resource, namespace string, obj apis.Resource) error {
+	if owner != nil {
+		_ = controllerutil.SetControllerReference(owner, obj, r.GetScheme())
+	}
+	if namespace != "" {
+		obj.SetNamespace(namespace)
+	}
+
+	obj2 := obj.DeepCopyObject()
+
+	err := c.Get(context.TODO(), types.NamespacedName{
+		Namespace: obj.GetNamespace(),
+		Name:      obj.GetName(),
+	}, obj2)
+
+	if apierrors.IsNotFound(err) {
+		err = c.Create(context.TODO(), obj)
+		if err != nil {
+			log.Error(err, "unable to create object", "object", obj)
+			return err
+		}
+		return nil
+	}
+	if err == nil {
+		obj3, ok := obj2.(metav1.Object)
+		if !ok {
+			err := errs.New("unable to convert to metav1.Object")
+			log.Error(err, "unable to convert to metav1.Object", "object", obj2)
+			return err
+		}
+		obj.SetResourceVersion(obj3.GetResourceVersion())
+		err = c.Update(context.TODO(), obj)
+		if err != nil {
+			log.Error(err, "unable to update object", "object", obj)
+			return err
+		}
+		return nil
+
+	}
+	log.Error(err, "unable to lookup object", "object", obj)
+	return err
 }
