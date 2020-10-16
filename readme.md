@@ -85,6 +85,7 @@ When a namespace with the opt-in annotation is created, the following happens:
 
 ## Support for vSphere
 
+Egress-ipam-operator treats vSphere as a bare metal installation, so it will work with a network setup in which secondary IPs can be added to the VMs with no intereaction with the vSphere API.
 You can use the egressip-ipam-operator on your vSphere installation assuming that the nodes you want to use are labelled according to the `topologyLabel`. You can label them manually, or by changing the MachineSet configuration:
 
 ```yaml
@@ -123,6 +124,7 @@ spec:
 
 ## Support for oVirt / Red Hat Virtualization
 
+Egress-ipam-operator treats RHV as a bare metal installation, so it will work with a network setup in which secondary IPs can be added to the VMs with no intereaction with the RHV API. Refer to the vSphere section for more details.
 Example EgressIPAM configuration:
 
 ```yaml
