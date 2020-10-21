@@ -58,7 +58,7 @@ metadata:
     capabilities: Deep Insights
     categories: Networking, Cloud Provider, Security
     certified: "false"
-    containerImage: quay.io/redhat-cop/egressip-ipam-operator:latest
+    containerImage: quay.io/redhat-cop/egressip-ipam-operator:v0.1.2
     createdAt: 03/13/2020
     description: This operator provides automation around manageing egressIPs.
     repository: https://github.com/redhat-cop/egressip-ipam-operator
