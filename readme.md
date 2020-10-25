@@ -85,6 +85,7 @@ When a namespace with the opt-in annotation is created, the following happens:
 
 ## Support for vSphere
 
+Egress-ipam-operator treats vSphere as a bare metal installation, so it will work with a network setup in which secondary IPs can be added to the VMs with no intereaction with the vSphere API.
 You can use the egressip-ipam-operator on your vSphere installation assuming that the nodes you want to use are labelled according to the `topologyLabel`. You can label them manually, or by changing the MachineSet configuration:
 
 ```yaml
@@ -109,6 +110,28 @@ apiVersion: redhatcop.redhat.io/v1alpha1
 kind: EgressIPAM
 metadata:
   name: egressipam-vsphere
+spec:
+  cidrAssignments:
+    - labelValue: "true"
+      CIDR: 192.169.0.0/24
+      reservedIPs:
+      - "192.159.0.5"
+  topologyLabel: egressGateway
+  nodeSelector:
+    matchLabels:
+      node-role.kubernetes.io/worker: ""
+```
+
+## Support for oVirt / Red Hat Virtualization
+
+Egress-ipam-operator treats RHV as a bare metal installation, so it will work with a network setup in which secondary IPs can be added to the VMs with no intereaction with the RHV API. Refer to the vSphere section for more details.
+Example EgressIPAM configuration:
+
+```yaml
+apiVersion: redhatcop.redhat.io/v1alpha1
+kind: EgressIPAM
+metadata:
+  name: egressipam-rhv
 spec:
   cidrAssignments:
     - labelValue: "true"
@@ -179,7 +202,7 @@ oc apply -f deploy/role.yaml -n egressip-ipam-operator
 oc apply -f deploy/role_binding.yaml -n egressip-ipam-operator
 export token=$(oc serviceaccounts get-token 'egressip-ipam-operator' -n egressip-ipam-operator)
 oc login --token=${token}
-OPERATOR_NAME='egressip-ipam-operator' NAMESPACE='egressip-ipam-operator' operator-sdk --verbose run --local --namespace "" --operator-flags="--zap-level=debug"
+OPERATOR_NAME='egressip-ipam-operator' NAMESPACE='egressip-ipam-operator' operator-sdk --verbose run local --watch-namespace "" --operator-flags="--zap-level=debug"
 ```
 
 ## Testing

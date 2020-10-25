@@ -24,7 +24,7 @@ operator-sdk olm-catalog gen-csv --csv-version $new_version --csv-channel alpha 
 If you are updating run the following:
 
 ```shell
-operator-sdk olm-catalog gen-csv --csv-version $new_version --from-version $old_version --update-crds
+operator-sdk generate csv --csv-version $new_version --from-version $old_version --update-crds --make-manifests=false
 ```
 
 verify the created csv:
@@ -35,6 +35,13 @@ operator-courier --verbose verify --ui_validate_io deploy/olm-catalog/egressip-i
 ```
 
 ## Test new CSV
+
+One new way to test is the following:
+
+```shell
+oc new-project egressip-ipam-operator
+operator-sdk run packagemanifests --operator-version ${new_version} --olm-namespace openshift-operator-lifecycle-manager --operator-namespace egressip-ipam-operator --install-mode=OwnNamespace=egressip-ipam-operator
+```
 
 Test what the operator would look like in OperatorHub, by going to this [site](https://operatorhub.io/preview) and paste the csv/
 
