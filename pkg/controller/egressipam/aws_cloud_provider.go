@@ -402,13 +402,7 @@ func (a *AwsCloudprovider) createCredentialRequest() error {
 		},
 	}
 
-	c, err := a.reconciler.getDirectClient()
-	if err != nil {
-		log.Error(err, "unable to create direct Client")
-		return err
-	}
-
-	err = a.reconciler.createOrUpdateResourceWithClient(c, nil, "", &request)
+	err = (*a.OcpClient).CreateOrUpdateResource(nil, "", &request)
 	if err != nil {
 		log.Error(err, "unable to create or update ", "credential request", request)
 		return err
@@ -419,7 +413,7 @@ func (a *AwsCloudprovider) createCredentialRequest() error {
 
 //goland:noinspection SpellCheckingInspection
 func (a *AwsCloudprovider) getAWSCredentials() (id string, key string, err error) {
-	awsCredentialSecret, err := (*a.OcpClient).GetCredentialSecret(a.reconciler)
+	awsCredentialSecret, err := (*a.OcpClient).GetCredentialSecret()
 	if err != nil {
 		log.Error(err, "unable to get credential secret")
 		return "", "", err
