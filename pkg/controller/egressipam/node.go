@@ -17,11 +17,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-type enqueForSelectingEgressIPAMNode struct {
+type enqueueForSelectingEgressIPAMNode struct {
 	r *ReconcileEgressIPAM
 }
 
-// return whether this EgressIPAM macthes this node and with which CIDR
+// return whether this EgressIPAM matches this node and with which CIDR
 func matchesNode(egressIPAM *redhatcopv1alpha1.EgressIPAM, node corev1.Node) (bool, string) {
 	value, ok := node.GetLabels()[egressIPAM.Spec.TopologyLabel]
 	if !ok {
@@ -35,8 +35,8 @@ func matchesNode(egressIPAM *redhatcopv1alpha1.EgressIPAM, node corev1.Node) (bo
 	return false, ""
 }
 
-// trigger a egressIPAM reconcile event for those egressIPAM objcts that reference this node
-func (e *enqueForSelectingEgressIPAMNode) Create(evt event.CreateEvent, q workqueue.RateLimitingInterface) {
+// trigger a egressIPAM reconcile event for those egressIPAM objects that reference this node
+func (e *enqueueForSelectingEgressIPAMNode) Create(evt event.CreateEvent, q workqueue.RateLimitingInterface) {
 	node, ok := evt.Object.(*corev1.Node)
 	if !ok {
 		log.Info("unable convert event object to node,", "event", evt)
@@ -58,7 +58,7 @@ func (e *enqueForSelectingEgressIPAMNode) Create(evt event.CreateEvent, q workqu
 
 // Update implements EventHandler
 // trigger a router reconcile event for those routes that reference this secret
-func (e *enqueForSelectingEgressIPAMNode) Update(evt event.UpdateEvent, q workqueue.RateLimitingInterface) {
+func (e *enqueueForSelectingEgressIPAMNode) Update(evt event.UpdateEvent, q workqueue.RateLimitingInterface) {
 	node, ok := evt.ObjectNew.(*corev1.Node)
 	if !ok {
 		log.Info("unable convert event object to node,", "event", evt)
@@ -79,12 +79,12 @@ func (e *enqueForSelectingEgressIPAMNode) Update(evt event.UpdateEvent, q workqu
 }
 
 // Delete implements EventHandler
-func (e *enqueForSelectingEgressIPAMNode) Delete(evt event.DeleteEvent, q workqueue.RateLimitingInterface) {
+func (e *enqueueForSelectingEgressIPAMNode) Delete(_ event.DeleteEvent, _ workqueue.RateLimitingInterface) {
 	return
 }
 
 // Generic implements EventHandler
-func (e *enqueForSelectingEgressIPAMNode) Generic(evt event.GenericEvent, q workqueue.RateLimitingInterface) {
+func (e *enqueueForSelectingEgressIPAMNode) Generic(_ event.GenericEvent, _ workqueue.RateLimitingInterface) {
 	return
 }
 
@@ -107,15 +107,15 @@ func (r *ReconcileEgressIPAM) getSelectedNodes(rc *ReconcileContext) (map[string
 		return map[string]corev1.Node{}, err
 	}
 	selectedNodes := map[string]corev1.Node{}
-	for nodename, node := range rc.AllNodes {
+	for nodeName, node := range rc.AllNodes {
 		if selector.Matches(labels.Set(node.GetLabels())) {
-			selectedNodes[nodename] = node
+			selectedNodes[nodeName] = node
 		}
 	}
 	return selectedNodes, nil
 }
 
-func (r *ReconcileEgressIPAM) getAssignedIPsByNode(rc *ReconcileContext) map[string][]string {
+func (r *ReconcileEgressIPAM) GetAssignedIPsByNode(rc *ReconcileContext) map[string][]string {
 	assignedIPsByNode := map[string][]string{}
 	for hostSubnetName, hostsubnet := range rc.SelectedHostSubnets {
 		assignedIPsByNode[hostSubnetName] = GetHostHostSubnetEgressIPsAsStrings(hostsubnet.EgressIPs)
@@ -125,10 +125,10 @@ func (r *ReconcileEgressIPAM) getAssignedIPsByNode(rc *ReconcileContext) map[str
 
 func (r *ReconcileEgressIPAM) getNodesIPsByCIDR(rc *ReconcileContext) (map[string][]net.IP, error) {
 	nodesIPsByCIDR := map[string][]net.IP{}
-	for nodename := range rc.AllNodes {
-		hostsubnet, ok := rc.AllHostSubnets[nodename]
+	for nodeName := range rc.AllNodes {
+		hostsubnet, ok := rc.AllHostSubnets[nodeName]
 		if !ok {
-			return map[string][]net.IP{}, errors.New("unable to find hostsubnet for node:" + nodename)
+			return map[string][]net.IP{}, errors.New("unable to find hostsubnet for node:" + nodeName)
 		}
 		for _, cidr := range rc.CIDRs {
 			ip := net.ParseIP(hostsubnet.HostIP)
@@ -140,7 +140,7 @@ func (r *ReconcileEgressIPAM) getNodesIPsByCIDR(rc *ReconcileContext) (map[strin
 	return nodesIPsByCIDR, nil
 }
 
-func (r *ReconcileEgressIPAM) getAllNodes(rc *ReconcileContext) (map[string]corev1.Node, error) {
+func (r *ReconcileEgressIPAM) getAllNodes(_ *ReconcileContext) (map[string]corev1.Node, error) {
 	nodeList := &corev1.NodeList{}
 	err := r.GetClient().List(context.TODO(), nodeList, &client.ListOptions{})
 	if err != nil {
@@ -155,6 +155,7 @@ func (r *ReconcileEgressIPAM) getAllNodes(rc *ReconcileContext) (map[string]core
 }
 
 func getNodeNames(nodes map[string]corev1.Node) []string {
+	//goland:noinspection GoPreferNilSlice
 	nodeNames := []string{}
 	for _, node := range nodes {
 		nodeNames = append(nodeNames, node.GetName())

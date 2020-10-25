@@ -105,7 +105,7 @@ func (e *enqueForSelectingEgressIPAMHostSubnet) Generic(_ event.GenericEvent, _ 
 }
 
 // ensures that hostsubntes have the correct egressIPs
-func (r *ReconcileEgressIPAM) reconcileHSAssignedIPs(rc *ReconcileContext) error {
+func (r *ReconcileEgressIPAM) ReconcileHSAssignedIPs(rc *ReconcileContext) error {
 	results := make(chan error)
 	defer close(results)
 	for hostsubnetname, hostsubnet := range rc.SelectedHostSubnets {
@@ -133,6 +133,14 @@ func (r *ReconcileEgressIPAM) reconcileHSAssignedIPs(rc *ReconcileContext) error
 }
 
 // ensures that hostsubnets have the correct CIDR
+//
+//high-level desing specific for all supported cloud providers and bare metal
+//
+// 1. load all the nodes that comply with the additional filters of this EgressIPAM
+//
+// 2. sort the nodes by node_label/value so to have a maps of CIDR:[]node
+//
+// 3. reconcile the hostsubnets assigning CIDRs as per the map created at #2
 func (r *ReconcileEgressIPAM) assignCIDRsToHostSubnets(rc *ReconcileContext) error {
 	for cidr, nodes := range rc.SelectedNodesByCIDR {
 		cidrs := []string{cidr}

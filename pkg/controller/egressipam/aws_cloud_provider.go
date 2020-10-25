@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/redhat-cop/operator-utils/pkg/util"
+	"github.com/jpillora/ipmath"
 	"net"
 	"strings"
 
@@ -23,10 +23,8 @@ import (
 var _ Cloudprovider = &AwsCloudprovider{}
 
 type AwsCloudprovider struct {
-	// TODO 2020-10-03 klenkes74 it's needed to acces the CreateOrUpdate method. We need a nicer solution to this hack
-	util.ReconcilerBase
-
-	OcpClient *OcpClient
+	OcpClient  *OcpClient
+	reconciler *ReconcileEgressIPAM
 
 	//aws specific
 	AwsRegion string
@@ -36,28 +34,82 @@ type AwsCloudprovider struct {
 	awsUsedIPsByCIDR     map[string][]net.IP
 }
 
-func (r *AwsCloudprovider) GetUsedIPs(_ *ReconcileContext) map[string][]net.IP {
-	return r.awsUsedIPsByCIDR
-}
+// Reconcile does the AWS specific handling of the reconciliation.
+//
+// 1. load all the nodes that comply with the additional filters of this EgressIPAM
+//
+// 2. sort the nodes by node_label/value so to have a maps of CIDR:[]node
+//
+// 3. load all the secondary IPs assigned to AWS instances by node
+//
+// 4. comparing with general #3, free the assigned AWS secondary IPs that are not needed anymore
+//
+// 5. assign IPs to nodes, considering the currently assigned IPs (we try not to move the currently assigned IPs)
+//
+// 6. reconcile assigned IP to nodes with secondary IPs assigned to AWS machines
+//
+// 7. reconcile assigned IP to nodes with corresponding hostsubnet
+func (a *AwsCloudprovider) Reconcile(rc *ReconcileContext) error {
+	assignedIPsByNode := a.reconciler.GetAssignedIPsByNode(rc)
+	rc.InitiallyAssignedIPsByNode = assignedIPsByNode
 
-func (r *AwsCloudprovider) RemoveAssignedIPs(rc *ReconcileContext) error {
-	err := r.initializeProvider()
+	log.V(1).Info("", "initiallyAssignedIPsByNode", rc.InitiallyAssignedIPsByNode)
+
+	finallyAssignedIPsByNode, err := a.reconciler.AssignIPsToNodes(rc)
+	if err != nil {
+		log.Error(err, "unable to assign egress IPs to nodes")
+		return err
+	}
+	log.V(1).Info("", "finallyAssignedIPsByNode", finallyAssignedIPsByNode)
+
+	rc.FinallyAssignedIPsByNode = finallyAssignedIPsByNode
+	err = a.manageCloudIPs(rc)
 	if err != nil {
 		return err
 	}
+	log.V(1).Info("", "finallyAssignedIPsByNode", finallyAssignedIPsByNode)
 
+	err = a.reconciler.ReconcileHSAssignedIPs(rc)
+	if err != nil {
+		log.Error(err, "unable to reconcile hostsubnet with ", "nodes", assignedIPsByNode)
+		return err
+	}
+
+	return nil
+}
+
+func (a *AwsCloudprovider) AssignIPsToNamespace(rc *ReconcileContext, IPsByCIDR map[string][]net.IP) ([]corev1.Namespace, error) {
+	//add some reserved IPs
+	for cidr := range IPsByCIDR {
+		base, _, err := net.ParseCIDR(cidr)
+		if err != nil {
+			log.Error(err, "unable to parse", "cidr", cidr)
+			return []corev1.Namespace{}, err
+		}
+		IPsByCIDR[cidr] = append(IPsByCIDR[cidr], ipmath.DeltaIP(base, 1), ipmath.DeltaIP(base, 2), ipmath.DeltaIP(base, 3))
+		IPsByCIDR[cidr] = append(IPsByCIDR[cidr], a.getUsedIPs(rc)[cidr]...)
+	}
+
+	return nil, nil
+}
+
+func (a *AwsCloudprovider) getUsedIPs(_ *ReconcileContext) map[string][]net.IP {
+	return a.awsUsedIPsByCIDR
+}
+
+func (a *AwsCloudprovider) CleanUpCloudProvider(rc *ReconcileContext) error {
 	results := make(chan error)
 	defer close(results)
 	for _, node := range rc.SelectedNodes {
 		nodec := node.DeepCopy()
 		go func() {
-			instance := r.selectedAWSInstances[r.getAWSIDFromNode(*nodec)]
+			instance := a.selectedAWSInstances[a.getAWSIDFromNode(*nodec)]
 			for _, secondaryIP := range instance.NetworkInterfaces[0].PrivateIpAddresses[1:] {
 				input := &ec2.UnassignPrivateIpAddressesInput{
 					NetworkInterfaceId: instance.NetworkInterfaces[0].NetworkInterfaceId,
 					PrivateIpAddresses: []*string{secondaryIP.PrivateIpAddress},
 				}
-				_, err := r.awsClient.UnassignPrivateIpAddresses(input)
+				_, err := a.awsClient.UnassignPrivateIpAddresses(input)
 				if err != nil {
 					log.Error(err, "unable to remove IPs from ", "instance", instance.InstanceId)
 					results <- err
@@ -75,22 +127,14 @@ func (r *AwsCloudprovider) RemoveAssignedIPs(rc *ReconcileContext) error {
 	return result.ErrorOrNil()
 }
 
-func (r *AwsCloudprovider) ManageCloudIPs(rc *ReconcileContext) error {
-	if r.awsClient == nil {
-		err := r.getAWSClient()
-		if err != nil {
-			log.Error(err, "unable to intialize the AWS client")
-			return err
-		}
-	}
-
-	err := r.removeAWSUnusedIPs(rc)
+func (a *AwsCloudprovider) manageCloudIPs(rc *ReconcileContext) error {
+	err := a.removeAWSUnusedIPs(rc)
 	if err != nil {
 		log.Error(err, "unable to remove assigned AWS IPs")
 		return err
 	}
 
-	err = r.reconcileAWSAssignedIPs(rc)
+	err = a.reconcileAWSAssignedIPs(rc)
 	if err != nil {
 		log.Error(err, "unable to assign egress IPs to aws machines")
 		return err
@@ -99,42 +143,34 @@ func (r *AwsCloudprovider) ManageCloudIPs(rc *ReconcileContext) error {
 	return nil
 }
 
-func (r *AwsCloudprovider) HarvestCloudData(rc *ReconcileContext) error {
-	if r.awsClient == nil {
-		err := r.getAWSClient()
-		if err != nil {
-			log.Error(err, "unable to intialize the AWS client")
-			return err
-		}
-	}
-
+func (a *AwsCloudprovider) CollectCloudData(rc *ReconcileContext) error {
 	results := make(chan error)
 	defer close(results)
 
 	go func() {
-		selectedAWSInstances, err := r.getAWSIstances(rc.SelectedNodes)
+		selectedAWSInstances, err := a.getAWSInstances(rc.SelectedNodes)
 		if err != nil {
 			log.Error(err, "unable to get selected AWS Instances")
 			results <- err
 			return
 		}
-		r.selectedAWSInstances = selectedAWSInstances
+		a.selectedAWSInstances = selectedAWSInstances
 
-		log.V(1).Info("", "selectedAWSInstances", r.getAWSInstancesMapKeys(r.selectedAWSInstances))
+		log.V(1).Info("", "selectedAWSInstances", a.getAWSInstancesMapKeys(a.selectedAWSInstances))
 		results <- nil
 		return
 	}()
 
 	go func() {
-		awsUsedIPsByCIDR, err := r.getAWSUsedIPsByCIDR(rc)
+		awsUsedIPsByCIDR, err := a.getAWSUsedIPsByCIDR(rc)
 		if err != nil {
 			log.Error(err, "unable to get used AWS IPs by CIDR")
 			results <- err
 			return
 		}
-		r.awsUsedIPsByCIDR = awsUsedIPsByCIDR
+		a.awsUsedIPsByCIDR = awsUsedIPsByCIDR
 
-		log.V(1).Info("", "awsUsedIPsByCIDR", r.awsUsedIPsByCIDR)
+		log.V(1).Info("", "awsUsedIPsByCIDR", a.awsUsedIPsByCIDR)
 		results <- nil
 		return
 	}()
@@ -153,42 +189,49 @@ func (r *AwsCloudprovider) HarvestCloudData(rc *ReconcileContext) error {
 	return nil
 }
 
-func (r *AwsCloudprovider) initializeProvider() error {
-	if r.awsClient == nil {
-		err := r.getAWSClient()
-		if err != nil {
-			log.Error(err, "unable to intialize the AWS client")
+func (a *AwsCloudprovider) Initialize(r *ReconcileEgressIPAM) error {
+	a.reconciler = r
+
+	if a.awsClient == nil {
+		if err := a.createCredentialRequest(); err != nil {
+			log.Error(err, "unable to create the credential request")
+			return err
+		}
+
+		if err := a.getAWSClient(); err != nil {
+			log.Error(err, "unable to initialize the AWS client")
 			return err
 		}
 	}
+
 	return nil
 }
 
-func (r *AwsCloudprovider) getAWSClient() error {
-	id, key, err := r.getAWSCredentials()
+func (a *AwsCloudprovider) getAWSClient() error {
+	id, key, err := a.getAWSCredentials()
 	if err != nil {
 		log.Error(err, "unable to get aws credentials")
 		return err
 	}
-	if r.AwsRegion == "" {
+	if a.AwsRegion == "" {
 		log.Error(errors.New("no region given"), "unable to determine region of AWS")
 		return err
 	}
 
 	mySession := session.Must(session.NewSession())
-	r.awsClient = ec2.New(mySession, aws.NewConfig().WithCredentials(credentials.NewStaticCredentials(id, key, "")).WithRegion(r.AwsRegion))
+	a.awsClient = ec2.New(mySession, aws.NewConfig().WithCredentials(credentials.NewStaticCredentials(id, key, "")).WithRegion(a.AwsRegion))
 	return nil
 }
 
-func (r *AwsCloudprovider) getAWSIstances(nodes map[string]corev1.Node) (map[string]*ec2.Instance, error) {
+func (a *AwsCloudprovider) getAWSInstances(nodes map[string]corev1.Node) (map[string]*ec2.Instance, error) {
 	var instanceIds []*string
 	for _, node := range nodes {
-		instanceIds = append(instanceIds, aws.String(r.getAWSIDFromProviderID(node.Spec.ProviderID)))
+		instanceIds = append(instanceIds, aws.String(a.getAWSIDFromProviderID(node.Spec.ProviderID)))
 	}
 	input := &ec2.DescribeInstancesInput{
 		InstanceIds: instanceIds,
 	}
-	result, err := r.awsClient.DescribeInstances(input)
+	result, err := a.awsClient.DescribeInstances(input)
 	if err != nil {
 		log.Error(err, "unable to get aws ", "instances", instanceIds)
 		return map[string]*ec2.Instance{}, err
@@ -202,7 +245,7 @@ func (r *AwsCloudprovider) getAWSIstances(nodes map[string]corev1.Node) (map[str
 	return instances, nil
 }
 
-func (r *AwsCloudprovider) getAWSInstancesMapKeys(instances map[string]*ec2.Instance) []string {
+func (a *AwsCloudprovider) getAWSInstancesMapKeys(instances map[string]*ec2.Instance) []string {
 	var instanceIDs []string
 	for id := range instances {
 		instanceIDs = append(instanceIDs, id)
@@ -210,24 +253,24 @@ func (r *AwsCloudprovider) getAWSInstancesMapKeys(instances map[string]*ec2.Inst
 	return instanceIDs
 }
 
-func (r *AwsCloudprovider) getAWSIDFromProviderID(providerID string) string {
-	strs := strings.Split(providerID, "/")
-	return strs[len(strs)-1]
+func (a *AwsCloudprovider) getAWSIDFromProviderID(providerID string) string {
+	s := strings.Split(providerID, "/")
+	return s[len(s)-1]
 }
 
-func (r *AwsCloudprovider) getAWSIDFromNode(node corev1.Node) string {
-	return r.getAWSIDFromProviderID(node.Spec.ProviderID)
+func (a *AwsCloudprovider) getAWSIDFromNode(node corev1.Node) string {
+	return a.getAWSIDFromProviderID(node.Spec.ProviderID)
 }
 
 // removes AWS secondary IPs that are currently assigned but not needed
-func (r *AwsCloudprovider) removeAWSUnusedIPs(rc *ReconcileContext) error {
+func (a *AwsCloudprovider) removeAWSUnusedIPs(rc *ReconcileContext) error {
 	results := make(chan error)
 	defer close(results)
 	for node, ips := range rc.FinallyAssignedIPsByNode {
 		nodec := node
 		ipsc := ips
 		go func() {
-			instance := r.selectedAWSInstances[r.getAWSIDFromNode(rc.AllNodes[nodec])]
+			instance := a.selectedAWSInstances[a.getAWSIDFromNode(rc.AllNodes[nodec])]
 			var awsAssignedIPs []string
 			for _, ipipas := range instance.NetworkInterfaces[0].PrivateIpAddresses {
 				if !(*ipipas.Primary) {
@@ -239,15 +282,15 @@ func (r *AwsCloudprovider) removeAWSUnusedIPs(rc *ReconcileContext) error {
 				log.Info("vm", "instance ", instance.InstanceId, " will be freed from IPs ", toBeRemovedIPs)
 				var toBeRemovedIPsAWSStr []*string
 				for _, ip := range toBeRemovedIPs {
-					copyip := ip
-					toBeRemovedIPsAWSStr = append(toBeRemovedIPsAWSStr, &copyip)
+					copyIP := ip
+					toBeRemovedIPsAWSStr = append(toBeRemovedIPsAWSStr, &copyIP)
 				}
 
 				input := &ec2.UnassignPrivateIpAddressesInput{
 					NetworkInterfaceId: instance.NetworkInterfaces[0].NetworkInterfaceId,
 					PrivateIpAddresses: toBeRemovedIPsAWSStr,
 				}
-				_, err := r.awsClient.UnassignPrivateIpAddresses(input)
+				_, err := a.awsClient.UnassignPrivateIpAddresses(input)
 				if err != nil {
 					log.Error(err, "unable to remove IPs from ", "instance", instance.InstanceId)
 					results <- err
@@ -267,14 +310,14 @@ func (r *AwsCloudprovider) removeAWSUnusedIPs(rc *ReconcileContext) error {
 }
 
 // assigns secondary IPs to AWS machines
-func (r *AwsCloudprovider) reconcileAWSAssignedIPs(rc *ReconcileContext) error {
+func (a *AwsCloudprovider) reconcileAWSAssignedIPs(rc *ReconcileContext) error {
 	results := make(chan error)
 	defer close(results)
 	for node, assignedIPsToNode := range rc.FinallyAssignedIPsByNode {
 		nodec := node
 		ipsc := assignedIPsToNode
 		go func() {
-			instance := r.selectedAWSInstances[r.getAWSIDFromNode(rc.AllNodes[nodec])]
+			instance := a.selectedAWSInstances[a.getAWSIDFromNode(rc.AllNodes[nodec])]
 			var awsAssignedIPs []string
 			for _, ipipas := range instance.NetworkInterfaces[0].PrivateIpAddresses {
 				if !*ipipas.Primary {
@@ -286,17 +329,17 @@ func (r *AwsCloudprovider) reconcileAWSAssignedIPs(rc *ReconcileContext) error {
 				log.Info("vm", "instance ", instance.InstanceId, " will be assigned IPs ", toBeAssignedIPs)
 				var toBeAssignedIPsAWSStr []*string
 				for _, ip := range toBeAssignedIPs {
-					copyip := ip
-					toBeAssignedIPsAWSStr = append(toBeAssignedIPsAWSStr, &copyip)
+					copyIp := ip
+					toBeAssignedIPsAWSStr = append(toBeAssignedIPsAWSStr, &copyIp)
 				}
 
 				input := &ec2.AssignPrivateIpAddressesInput{
 					NetworkInterfaceId: instance.NetworkInterfaces[0].NetworkInterfaceId,
 					PrivateIpAddresses: toBeAssignedIPsAWSStr,
 				}
-				_, err := r.awsClient.AssignPrivateIpAddresses(input)
+				_, err := a.awsClient.AssignPrivateIpAddresses(input)
 				if err != nil {
-					log.Error(err, "unable to assigne IPs to ", "instance", instance.InstanceId)
+					log.Error(err, "unable to assign IPs to ", "instance", instance.InstanceId)
 					results <- err
 					return
 				}
@@ -312,7 +355,7 @@ func (r *AwsCloudprovider) reconcileAWSAssignedIPs(rc *ReconcileContext) error {
 	return result.ErrorOrNil()
 }
 
-func (r *AwsCloudprovider) CreateCredentialRequest() error {
+func (a *AwsCloudprovider) createCredentialRequest() error {
 	awsSpec := cloudcredentialv1.AWSProviderSpec{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "cloudcredential.openshift.io/v1",
@@ -334,7 +377,7 @@ func (r *AwsCloudprovider) CreateCredentialRequest() error {
 			},
 		},
 	}
-	namespace, err := (*r.OcpClient).GetOperatorNamespace()
+	namespace, err := (*a.OcpClient).GetOperatorNamespace()
 	if err != nil {
 		log.Error(err, "unable to get operator's namespace")
 		return err
@@ -358,12 +401,14 @@ func (r *AwsCloudprovider) CreateCredentialRequest() error {
 			},
 		},
 	}
-	c, err := r.getDirectClient()
+
+	c, err := a.reconciler.getDirectClient()
 	if err != nil {
 		log.Error(err, "unable to create direct client")
 		return err
 	}
-	err = r.createOrUpdateResourceWithClient(c, nil, "", &request)
+
+	err = a.reconciler.createOrUpdateResourceWithClient(c, nil, "", &request)
 	if err != nil {
 		log.Error(err, "unable to create or update ", "credential request", request)
 		return err
@@ -372,8 +417,9 @@ func (r *AwsCloudprovider) CreateCredentialRequest() error {
 	return nil
 }
 
-func (r *AwsCloudprovider) getAWSCredentials() (id string, key string, err error) {
-	awsCredentialSecret, err := (*r.OcpClient).GetCredentialSecret()
+//goland:noinspection SpellCheckingInspection
+func (a *AwsCloudprovider) getAWSCredentials() (id string, key string, err error) {
+	awsCredentialSecret, err := (*a.OcpClient).GetCredentialSecret()
 	if err != nil {
 		log.Error(err, "unable to get credential secret")
 		return "", "", err
@@ -399,10 +445,10 @@ func (r *AwsCloudprovider) getAWSCredentials() (id string, key string, err error
 	return string(awsAccessKeyID), string(awsSecretAccessKey), nil
 }
 
-//getTakenIPsByCIDR this function will lookup all the subnets in which nodes are deployed and then lookup all the ips allocated by those subnest
-//currently it is requred that cidr declared in the egress map, correspon to cidr declared in subnets.
-func (r *AwsCloudprovider) getAWSUsedIPsByCIDR(rc *ReconcileContext) (map[string][]net.IP, error) {
-	machinesetList, err := (*r.OcpClient).ListMachineSets(context.TODO())
+//getTakenIPsByCIDR this function will lookup all the subnets in which nodes are deployed and then lookup all the ips allocated by those subnet
+//currently it is required that cidr declared in the egress map, corresponds to cidr declared in subnets.
+func (a *AwsCloudprovider) getAWSUsedIPsByCIDR(rc *ReconcileContext) (map[string][]net.IP, error) {
+	machinesetList, err := (*a.OcpClient).ListMachineSets(context.TODO())
 	if err != nil {
 		log.Error(err, "unable to load all machinesets")
 		return map[string][]net.IP{}, err
@@ -435,7 +481,7 @@ func (r *AwsCloudprovider) getAWSUsedIPsByCIDR(rc *ReconcileContext) (map[string
 		},
 	}
 
-	describeSubnetResult, err := r.awsClient.DescribeSubnets(describeSubnetInput)
+	describeSubnetResult, err := a.awsClient.DescribeSubnets(describeSubnetInput)
 	if err != nil {
 		log.Error(err, "unable to retrieve subnets ", "with request", describeSubnetInput)
 		return map[string][]net.IP{}, err
@@ -456,7 +502,7 @@ func (r *AwsCloudprovider) getAWSUsedIPsByCIDR(rc *ReconcileContext) (map[string
 		},
 	}
 
-	describeNetworkInterfacesResult, err := r.awsClient.DescribeNetworkInterfaces(describeNetworkInterfacesInput)
+	describeNetworkInterfacesResult, err := a.awsClient.DescribeNetworkInterfaces(describeNetworkInterfacesInput)
 	if err != nil {
 		log.Error(err, "unable to retrieve network interfaces ", "with request", describeNetworkInterfacesInput)
 		return map[string][]net.IP{}, err
@@ -487,7 +533,7 @@ func (r *AwsCloudprovider) getAWSUsedIPsByCIDR(rc *ReconcileContext) (map[string
 	return usedIPsByCIDR, nil
 }
 
-// this is a hack to work around current dependecy hell
+// this is a hack to work around current dependency hell
 
 // AWSMachineProviderConfig is the Schema for the awsmachineproviderconfigs API
 // +k8s:openapi-gen=true

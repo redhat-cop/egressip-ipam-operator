@@ -50,22 +50,75 @@ var log = logf.Log.WithName(controllerName)
 // Add creates a new EgressIPAM Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
 func Add(mgr manager.Manager) error {
-	return add(mgr, newReconciler(mgr))
+	r, err := newReconciler(mgr)
+	if err != nil {
+		return err
+	}
+
+	return add(mgr, r)
 }
 
 // newReconciler returns a new reconcile.Reconciler
-func newReconciler(mgr manager.Manager) reconcile.Reconciler {
+func newReconciler(mgr manager.Manager) (reconcile.Reconciler, error) {
 	var ocpClient OcpClient = &OcpClientImplementation{}
-	var cloudProvider Cloudprovider = &AwsCloudprovider{
-		OcpClient: &ocpClient,
-	}
 
-	return &ReconcileEgressIPAM{
+	result := &ReconcileEgressIPAM{
 		ReconcilerBase: util.NewReconcilerBase(mgr.GetClient(), mgr.GetScheme(), mgr.GetConfig(), mgr.GetEventRecorderFor(controllerName)),
 
-		ocpClient:     &ocpClient,
-		cloudProvider: &cloudProvider,
+		ocpClient: &ocpClient,
 	}
+
+	cloudProvider, err := result.createCloudProvider()
+	if err != nil {
+		return nil, err
+	}
+
+	result.cloudProvider = &cloudProvider
+
+	return result, nil
+}
+
+func (r *ReconcileEgressIPAM) createCloudProvider() (Cloudprovider, error) {
+	var result Cloudprovider
+
+	infrastructure, err := r.getInfrastructure()
+	if err != nil {
+		log.Error(err, "Unable to retrieve current cluster infrastructure")
+		return nil, err
+	}
+
+	log.V(1).Info("initializing cloud provider", "provider", infrastructure.Status.PlatformStatus.Type)
+	result = &BareMetalCloudProvider{}
+
+	switch infrastructure.Status.PlatformStatus.Type {
+	case ocpconfigv1.AWSPlatformType:
+		result = &AwsCloudprovider{
+			OcpClient: r.ocpClient,
+		}
+		break
+	case ocpconfigv1.AzurePlatformType:
+		result = &AzureCloudProvider{}
+		break
+	case ocpconfigv1.OpenStackPlatformType:
+		result = &OpenStackCloudProvider{}
+		break
+	case ocpconfigv1.VSpherePlatformType:
+		result = &VsphereCloudProvider{}
+		break
+	// Ovirt, Libvirt and bare metal are handled all the same.
+	case ocpconfigv1.OvirtPlatformType:
+	case ocpconfigv1.LibvirtPlatformType:
+	case ocpconfigv1.BareMetalPlatformType:
+	default:
+		result = &BareMetalCloudProvider{}
+	}
+
+	if err := result.Initialize(r); err != nil {
+		log.Error(err, "unable to initialize the cloud provider")
+		return nil, err
+	}
+
+	return result, nil
 }
 
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
@@ -73,27 +126,6 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	reconcileEgressIPAM, ok := r.(*ReconcileEgressIPAM)
 	if !ok {
 		log.Info("unable to convert to ReconcileEgressIPAM from ", "reconciler", r)
-	}
-
-	infrastructure, err := reconcileEgressIPAM.getInfrastructure()
-	if err != nil {
-		log.Error(err, "Unable to retrieve current cluster infrastructure")
-		return err
-	}
-	if runningOnAws(infrastructure) {
-		// retrieves the Region from the infrastructure and injects it to the CloudProvider
-		err := (*r.(*ReconcileEgressIPAM).cloudProvider).FailureRegion(infrastructure.Status.PlatformStatus.AWS.Region)
-		if err != nil {
-			log.Error(err, "unable to create credential request")
-			return err
-		}
-
-		// create credential request
-		err = (*r.(*ReconcileEgressIPAM).cloudProvider).CreateCredentialRequest()
-		if err != nil {
-			log.Error(err, "unable to create credential request")
-			return err
-		}
 	}
 
 	// Create a new controller
@@ -132,7 +164,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		TypeMeta: metav1.TypeMeta{
 			Kind: "Node",
 		},
-	}}, &enqueForSelectingEgressIPAMNode{
+	}}, &enqueueForSelectingEgressIPAMNode{
 		r: reconcileEgressIPAM,
 	}, &IsCreatedOrDeleted)
 	if err != nil {
@@ -264,18 +296,18 @@ type ReconcileEgressIPAM struct {
 }
 
 func (r *ReconcileEgressIPAM) getDirectClient() (client.Client, error) {
-	client, err := client.New(r.GetRestConfig(), client.Options{})
+	result, err := client.New(r.GetRestConfig(), client.Options{})
 	if err != nil {
-		log.Error(err, "unable to create client", "with restconfig", r.GetRestConfig())
+		//goland:noinspection SpellCheckingInspection
+		log.Error(err, "unable to create result", "with restconfig", r.GetRestConfig())
 		return nil, err
 	}
-	return client, nil
+	return result, nil
 }
 
 // Reconcile reads that state of the cluster for a EgressIPAM object and makes changes based on the state read
 // and what is in the EgressIPAM.Spec
-// TODO(user): Modify this Reconcile function to implement your Controller logic.  This example creates
-// a Pod as an example
+//
 // Note:
 // The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
@@ -314,6 +346,7 @@ func (r *ReconcileEgressIPAM) Reconcile(request reconcile.Request) (reconcile.Re
 		if !util.HasFinalizer(instance, controllerName) {
 			return reconcile.Result{}, nil
 		}
+
 		err := r.manageCleanUpLogic(instance)
 		if err != nil {
 			log.Error(err, "unable to delete instance", "instance", instance.GetName())
@@ -325,8 +358,10 @@ func (r *ReconcileEgressIPAM) Reconcile(request reconcile.Request) (reconcile.Re
 			log.Error(err, "unable to update instance", "instance", instance.GetName())
 			return r.ManageError(instance, err)
 		}
+
 		return reconcile.Result{}, nil
 	}
+
 	// load the reconcile context
 	rc, err := r.loadReconcileContext(instance)
 	if err != nil {
@@ -334,21 +369,8 @@ func (r *ReconcileEgressIPAM) Reconcile(request reconcile.Request) (reconcile.Re
 		return r.ManageError(instance, err)
 	}
 
-	// high-level common desing for all platforms:
-	// 1. load all namespaces referring this EgressIPAM and sort them between those that have egress IPs assigned and those who haven't
-	// 2. assign egress IPs to namespaces that don't have IPs assigned. One IP per CIDR from EgressIPAM. Pick IPs that are available in that CIDR, based on the already assigned IPs
-	// 3. update namespace assignment annotation (this is the source of truth for assignements)
-	// 4. reconcile netnamespaces
-
-	//get all namespaces that refer this instance and opt in into egressIPs
-
-	// unassignedNamespaces, assignedNamespaces, err := r.getReferringNamespaces(instance)
-	// if err != nil {
-	// 	log.Error(err, "unable to retrieve and sort referring namespaces for", "instance", instance)
-	// 	return r.ManageError(instance, err)
-	// }
-
-	//assign IPs To namespaces that don't have an IP, this will update the namespace assigned IP annotation
+	// assign IPs To namespaces that don't have an IP, this will update the namespace assigned IP annotation and handle
+	// the cloud provider
 	newlyAssignedNamespaces, err := r.assignIPsToNamespaces(rc)
 	if err != nil {
 		log.Error(err, "unable to assign IPs to unassigned ", "namespaces", rc.UnAssignedNamespaces)
@@ -368,67 +390,15 @@ func (r *ReconcileEgressIPAM) Reconcile(request reconcile.Request) (reconcile.Re
 		return r.ManageError(instance, err)
 	}
 
-	infrastructure, err := r.getInfrastructure()
+	err = r.assignCIDRsToHostSubnets(rc)
 	if err != nil {
-		log.Error(err, "unable to retrieve cluster infrastructure information")
+		log.Error(err, "unable to assign CIDR to hostsubnets from ", "nodesByCIDR", rc.SelectedNodesByCIDR)
 		return r.ManageError(instance, err)
 	}
 
-	// high-level desing specific for bare metal
-	// 1. load all the nodes that comply with the additional filters of this EgressIPAM
-	// 2. sort the nodes by node_label/value so to have a maps of CIDR:[]node
-	// 3. reconcile the hostsubnets assigning CIDRs as per the map created at #2
-
-	// baremetal + vsphere + oVirt/RHV
-	if infrastrcuture.Status.Platform == ocpconfigv1.NonePlatformType || infrastrcuture.Status.Platform == ocpconfigv1.VSpherePlatformType || infrastrcuture.Status.Platform == ocpconfigv1.OvirtPlatformType {
-		// nodesByCIDR, _, err := r.getSelectedNodesByCIDR(cr)
-		// if err != nil {
-		// 	log.Error(err, "unable to get nodes selected by ", "instance", instance)
-		// 	return r.ManageError(instance, err)
-		// }
-		err = r.assignCIDRsToHostSubnets(rc)
-		if err != nil {
-			log.Error(err, "unable to assigne CIDR to hostsubnets from ", "nodesByCIDR", rc.SelectedNodesByCIDR)
-			return r.ManageError(instance, err)
-		}
-		return r.ManageSuccess(instance)
-	}
-
-	// high-level desing specific for AWS
-	// 1. load all the nodes that comply with the additional filters of this EgressIPAM
-	// 2. sort the nodes by node_label/value so to have a maps of CIDR:[]node
-	// 3. load all the secondary IPs assigned to AWS instances by node
-	// 4. comparing with general #3, free the assigned AWS seocndary IPs that are not needed anymore
-	// 5. assign IPs to nodes, considering the currently assigned IPs (we try not to move the currently assigned IPs)
-	// 6. reconcile assigned IP to nodes with secondary IPs assigned to AWS machines
-	// 7. reconcile assigned IP to nodes with correcponing hostsubnet
-
-	if runningOnAws(infrastructure) {
-		assignedIPsByNode := r.getAssignedIPsByNode(rc)
-		rc.InitiallyAssignedIPsByNode = assignedIPsByNode
-
-		log.V(1).Info("", "InitiallyAssignedIPsByNode", rc.InitiallyAssignedIPsByNode)
-
-		finallyAssignedIPsByNode, err := r.assignIPsToNodes(rc)
-		if err != nil {
-			log.Error(err, "unable to assign egress IPs to nodes")
-			return r.ManageError(instance, err)
-		}
-		log.V(1).Info("", "FinallyAssignedIPsByNode", finallyAssignedIPsByNode)
-
-		rc.FinallyAssignedIPsByNode = finallyAssignedIPsByNode
-
-		err = (*r.cloudProvider).ManageCloudIPs(rc)
-		if err != nil {
-			return r.ManageError(instance, err)
-		}
-		log.V(1).Info("", "FinallyAssignedIPsByNode", finallyAssignedIPsByNode)
-
-		err = r.reconcileHSAssignedIPs(rc)
-		if err != nil {
-			log.Error(err, "unable to reconcile hostsubnest with ", "nodes", assignedIPsByNode)
-			return r.ManageError(instance, err)
-		}
+	// Cloud provider specific reconciliation
+	if err := (*r.cloudProvider).Reconcile(rc); err != nil {
+		return r.ManageError(instance, err)
 	}
 
 	return r.ManageSuccess(instance)
@@ -448,7 +418,7 @@ func (r *ReconcileEgressIPAM) getInfrastructure() (*ocpconfigv1.Infrastructure, 
 		Name: "cluster",
 	}, infrastructure)
 	if err != nil {
-		log.Error(err, "unable to retrieve cluster's infrastrcuture resource ")
+		log.Error(err, "unable to retrieve cluster's infrastructure resource ")
 		return &ocpconfigv1.Infrastructure{}, err
 	}
 	r.infrastructure = *infrastructure
@@ -457,17 +427,17 @@ func (r *ReconcileEgressIPAM) getInfrastructure() (*ocpconfigv1.Infrastructure, 
 
 //IsValid check if the instance is valid. In particular it checks that the CIDRs and the reservedIPs can be parsed correctly
 func (r *ReconcileEgressIPAM) IsValid(obj metav1.Object) (bool, error) {
-	ergessIPAM, ok := obj.(*redhatcopv1alpha1.EgressIPAM)
+	egressIPAM, ok := obj.(*redhatcopv1alpha1.EgressIPAM)
 	if !ok {
 		return false, errs.New("unable to convert to EgressIPAM")
 	}
-	for _, CIDRAssignemnt := range ergessIPAM.Spec.CIDRAssignments {
-		_, cidr, err := net.ParseCIDR(CIDRAssignemnt.CIDR)
+	for _, CidrAssignment := range egressIPAM.Spec.CIDRAssignments {
+		_, cidr, err := net.ParseCIDR(CidrAssignment.CIDR)
 		if err != nil {
-			log.Error(err, "unable to convert to", "cidr", CIDRAssignemnt.CIDR)
+			log.Error(err, "unable to convert to", "cidr", CidrAssignment.CIDR)
 			return false, err
 		}
-		for _, ipstr := range CIDRAssignemnt.ReservedIPs {
+		for _, ipstr := range CidrAssignment.ReservedIPs {
 			ip := net.ParseIP(ipstr)
 			if ip == nil {
 				err := errs.New("unable to parse IP: " + ipstr)
@@ -475,7 +445,7 @@ func (r *ReconcileEgressIPAM) IsValid(obj metav1.Object) (bool, error) {
 				return false, err
 			}
 			if !cidr.Contains(ip) {
-				err := errs.New("IP " + ipstr + " not contained in relative CIDR: " + CIDRAssignemnt.CIDR)
+				err := errs.New("IP " + ipstr + " not contained in relative CIDR: " + CidrAssignment.CIDR)
 				log.Error(err, "not contained", "IP", ip, "cidr", cidr)
 				return false, err
 			}
@@ -484,23 +454,22 @@ func (r *ReconcileEgressIPAM) IsValid(obj metav1.Object) (bool, error) {
 	return true, nil
 }
 
-//IsInitialized initislizes the instance, currently is simply adds a finalizer.
+//IsInitialized initializes the instance, currently is simply adds a finalizer.
 func (r *ReconcileEgressIPAM) IsInitialized(obj metav1.Object) bool {
 	isInitialized := true
-	ergessIPAM, ok := obj.(*redhatcopv1alpha1.EgressIPAM)
+	egressIPAM, ok := obj.(*redhatcopv1alpha1.EgressIPAM)
 	if !ok {
 		log.Error(errs.New("unable to convert to EgressIPAM"), "unable to convert to EgressIPAM")
 		return false
 	}
-	if !util.HasFinalizer(ergessIPAM, controllerName) {
-		util.AddFinalizer(ergessIPAM, controllerName)
+	if !util.HasFinalizer(egressIPAM, controllerName) {
+		util.AddFinalizer(egressIPAM, controllerName)
 		isInitialized = false
 	}
 	return isInitialized
 }
 
 func (r *ReconcileEgressIPAM) manageCleanUpLogic(instance *redhatcopv1alpha1.EgressIPAM) error {
-
 	// load the reconcile context
 	rc, err := r.loadReconcileContext(instance)
 	if err != nil {
@@ -529,17 +498,8 @@ func (r *ReconcileEgressIPAM) manageCleanUpLogic(instance *redhatcopv1alpha1.Egr
 		return err
 	}
 
-	// if aws remove all secondary assigned IPs from AWS instances
-	infrastrcuture, err := r.getInfrastructure()
-	if err != nil {
-		log.Error(err, "unable to retrieve cluster infrastrcuture information")
-		return err
-	}
-	if infrastrcuture.Status.PlatformStatus != nil && infrastrcuture.Status.PlatformStatus.Type == ocpconfigv1.AWSPlatformType {
-		return (*r.cloudProvider).RemoveAssignedIPs(rc)
-	}
-
-	return nil
+	// Handle the cloud provider specific removal
+	return (*r.cloudProvider).CleanUpCloudProvider(rc)
 }
 
 // ReconcileContext is the data model of the operator
@@ -578,11 +538,11 @@ func (r *ReconcileEgressIPAM) loadReconcileContext(egressIPAM *redhatcopv1alpha1
 	CIDRsByLabel := map[string]string{}
 	reservedIPsByCIDR := map[string][]net.IP{}
 	netCIDRByCIDR := map[string]*net.IPNet{}
-	for _, cidrAssignemnt := range egressIPAM.Spec.CIDRAssignments {
-		CIDRs = append(CIDRs, cidrAssignemnt.CIDR)
-		CIDRsByLabel[cidrAssignemnt.LabelValue] = cidrAssignemnt.CIDR
+	for _, cidrAssignment := range egressIPAM.Spec.CIDRAssignments {
+		CIDRs = append(CIDRs, cidrAssignment.CIDR)
+		CIDRsByLabel[cidrAssignment.LabelValue] = cidrAssignment.CIDR
 		var IPs []net.IP
-		for _, ipstr := range cidrAssignemnt.ReservedIPs {
+		for _, ipstr := range cidrAssignment.ReservedIPs {
 			IP := net.ParseIP(ipstr)
 			if IP == nil {
 				err := errs.New("unable to parse IP: " + ipstr)
@@ -591,13 +551,13 @@ func (r *ReconcileEgressIPAM) loadReconcileContext(egressIPAM *redhatcopv1alpha1
 			}
 			IPs = append(IPs, IP)
 		}
-		reservedIPsByCIDR[cidrAssignemnt.CIDR] = IPs
-		_, CIDR, err := net.ParseCIDR(cidrAssignemnt.CIDR)
+		reservedIPsByCIDR[cidrAssignment.CIDR] = IPs
+		_, CIDR, err := net.ParseCIDR(cidrAssignment.CIDR)
 		if err != nil {
-			log.Error(err, "unable to parse ", "cidr", cidrAssignemnt.CIDR)
+			log.Error(err, "unable to parse ", "cidr", cidrAssignment.CIDR)
 			return &ReconcileContext{}, err
 		}
-		netCIDRByCIDR[cidrAssignemnt.CIDR] = CIDR
+		netCIDRByCIDR[cidrAssignment.CIDR] = CIDR
 	}
 
 	rc.CIDRs = CIDRs
@@ -696,9 +656,9 @@ func (r *ReconcileEgressIPAM) loadReconcileContext(egressIPAM *redhatcopv1alpha1
 	log.V(1).Info("", "SelectedNodes", getNodeNames(rc.SelectedNodes))
 
 	selectedHostSubnets := map[string]ocpnetv1.HostSubnet{}
-	for hostsubnetname, hostsubnet := range rc.AllHostSubnets {
-		if _, ok := rc.SelectedNodes[hostsubnetname]; ok {
-			selectedHostSubnets[hostsubnetname] = hostsubnet
+	for hostsubnetName, hostsubnet := range rc.AllHostSubnets {
+		if _, ok := rc.SelectedNodes[hostsubnetName]; ok {
+			selectedHostSubnets[hostsubnetName] = hostsubnet
 		}
 	}
 
@@ -707,11 +667,11 @@ func (r *ReconcileEgressIPAM) loadReconcileContext(egressIPAM *redhatcopv1alpha1
 
 	selectedNodesByCIDR := map[string][]string{}
 	selectedHostSubnetsByCIDR := map[string][]string{}
-	for nodename, node := range rc.SelectedNodes {
+	for nodeName, node := range rc.SelectedNodes {
 		if value, ok := node.GetLabels()[egressIPAM.Spec.TopologyLabel]; ok {
 			if cidr, ok := CIDRsByLabel[value]; ok {
-				selectedNodesByCIDR[cidr] = append(selectedNodesByCIDR[cidr], nodename)
-				selectedHostSubnetsByCIDR[cidr] = append(selectedHostSubnetsByCIDR[cidr], nodename)
+				selectedNodesByCIDR[cidr] = append(selectedNodesByCIDR[cidr], nodeName)
+				selectedHostSubnetsByCIDR[cidr] = append(selectedHostSubnetsByCIDR[cidr], nodeName)
 			}
 		}
 	}
@@ -721,19 +681,9 @@ func (r *ReconcileEgressIPAM) loadReconcileContext(egressIPAM *redhatcopv1alpha1
 	log.V(1).Info("", "SelectedNodesByCIDR", rc.SelectedNodesByCIDR)
 	log.V(1).Info("", "selectedHostSubnetByCIDR", rc.SelectedHostSubnetsByCIDR)
 
-	infrastrcuture, err := r.getInfrastructure()
-	if err != nil {
-		log.Error(err, "unable to retrieve cluster infrastrcuture information")
+	if err := (*r.cloudProvider).CollectCloudData(rc); err != nil {
+		log.Error(err, "unable to retrieve the cloud information")
 		return &ReconcileContext{}, err
-	}
-
-	//aws
-	if infrastrcuture.Status.PlatformStatus != nil && infrastrcuture.Status.PlatformStatus.Type == ocpconfigv1.AWSPlatformType {
-		err := (*r.cloudProvider).HarvestCloudData(rc)
-		if err != nil {
-			log.Error(err, "unable to retrieve the cloud information")
-			return &ReconcileContext{}, err
-		}
 	}
 
 	return rc, nil

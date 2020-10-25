@@ -1,6 +1,9 @@
 package egressipam
 
-import "net"
+import (
+	corev1 "k8s.io/api/core/v1"
+	"net"
+)
 
 const (
 	// CredentialsSecretName is the cloud independent name of the k8s secret with the credentials
@@ -8,15 +11,19 @@ const (
 )
 
 type Cloudprovider interface {
+	// Initialize the cloud provider.
+	Initialize(r *ReconcileEgressIPAM) error
 
-	// HarvestCloudData collects the needed data from the cloud provider or throws an error.
-	HarvestCloudData(rc *ReconcileContext) error
+	// Reconcile is the cloud provider specific reconciliation. It may call methods on the generic reconciler so it
+	// needs the reconciler as parameter.
+	Reconcile(rc *ReconcileContext) error
 
-	// ManageCloudIPs will remove the unassigned IPs and assign the newly assigned IPs on the cloud. Will return an
-	// error for the very first error.
-	ManageCloudIPs(rc *ReconcileContext) error
+	// CollectCloudData collects the needed data from the cloud provider or throws an error.
+	CollectCloudData(rc *ReconcileContext) error
 
-	GetUsedIPs(rc *ReconcileContext) map[string][]net.IP
+	// AssignIPsToNamespace adds new IPs to the nodes.
+	AssignIPsToNamespace(rc *ReconcileContext, IPsByCIDR map[string][]net.IP) ([]corev1.Namespace, error)
 
-	RemoveAssignedIPs(rc *ReconcileContext) error
+	// CleanUpCloudProvider removes the old IPs from the cloud provider. It is called from the generic clean up logic.
+	CleanUpCloudProvider(rc *ReconcileContext) error
 }

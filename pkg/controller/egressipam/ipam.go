@@ -9,26 +9,21 @@ import (
 	"strings"
 
 	"github.com/jpillora/ipmath"
-	ocpconfigv1 "github.com/openshift/api/config/v1"
 	"github.com/scylladb/go-set/strset"
 	"github.com/scylladb/go-set/u32set"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// func getReservedIPsByCIDR(EgressIPAM *redhatcopv1alpha1.EgressIPAM) map[string][]net.IP {
-// 	ReservedIPsByCIDR := map[string][]net.IP{}
-// 	for _, cidrAssignment := range EgressIPAM.Spec.CIDRAssignments {
-// 		ips := []net.IP{}
-// 		for _, ipstr := range cidrAssignment.ReservedIPs {
-// 			ips = append(ips, net.ParseIP(ipstr))
-// 		}
-// 		ReservedIPsByCIDR[cidrAssignment.CIDR] = ips
-// 	}
-// 	return ReservedIPsByCIDR
-// }
-
 // Assigns ips to unassigned namespaces and updates them
+//
+// 1. load all namespaces referring this EgressIPAM and sort them between those that have egress IPs assigned and those who haven't
+//
+// 2. assign egress IPs to namespaces that don't have IPs assigned. One IP per CIDR from EgressIPAM. Pick IPs that are available in that CIDR, based on the already assigned IPs
+//
+// 3. update namespace assignment annotation (this is the source of truth for assignements)
+//
+// 4. reconcile netnamespaces
 func (r *ReconcileEgressIPAM) assignIPsToNamespaces(rc *ReconcileContext) ([]corev1.Namespace, error) {
 	IPsByCIDR, err := sortIPsByCIDR(rc)
 	if err != nil {
@@ -66,23 +61,9 @@ func (r *ReconcileEgressIPAM) assignIPsToNamespaces(rc *ReconcileContext) ([]cor
 	}
 	log.V(1).Info("adding nodes IPs (if in the same CIDR) ", "IPs by CIDR", IPsByCIDR)
 
-	// if in AWS we have some reserved addresses:
-	infrastructure, err := r.getInfrastructure()
+	namespaces, err := (*r.cloudProvider).AssignIPsToNamespace(rc, IPsByCIDR)
 	if err != nil {
-		log.Error(err, "unable to get infrastructure")
-		return []corev1.Namespace{}, err
-	}
-	if infrastructure.Status.Platform == ocpconfigv1.AWSPlatformType {
-		//add some reserved IPs
-		for cidr := range IPsByCIDR {
-			base, _, err := net.ParseCIDR(cidr)
-			if err != nil {
-				log.Error(err, "unable to parse", "cidr", cidr)
-				return []corev1.Namespace{}, err
-			}
-			IPsByCIDR[cidr] = append(IPsByCIDR[cidr], ipmath.DeltaIP(base, 1), ipmath.DeltaIP(base, 2), ipmath.DeltaIP(base, 3))
-			IPsByCIDR[cidr] = append(IPsByCIDR[cidr], (*r.cloudProvider).GetUsedIPs(rc)[cidr]...)
-		}
+		return namespaces, err
 	}
 	log.V(1).Info("adding cloud infrastructure reserved IPs ", "IPs by CIDR", IPsByCIDR)
 
@@ -195,7 +176,7 @@ func sortIPs(ips []net.IP) []net.IP {
 }
 
 // returns a map with nodes and egress IPs that have been assigned to them. This should preserve IPs that are already assigned.
-func (r *ReconcileEgressIPAM) assignIPsToNodes(rc *ReconcileContext) (map[string][]string, error) {
+func (r *ReconcileEgressIPAM) AssignIPsToNodes(rc *ReconcileContext) (map[string][]string, error) {
 	// 1. get assignedIPsToNodesByCIDR
 	// 2. get assignedIPsToNamespacesByCIDR
 	// 3. calculate toBeAssignedIPsByCIDR
