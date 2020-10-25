@@ -1,7 +1,7 @@
 
 # Image URL to use all building/pushing image targets
 REGISTRY ?= quay.io
-REPOSITORY ?= $(REGISTRY)/redhat-cop/egressip-ipam-operator
+REPOSITORY ?= $(REGISTRY)/klenkes74/egressip-ipam-operator
 
 IMG := $(REPOSITORY):latest
 

@@ -1,15 +1,24 @@
-FROM registry.access.redhat.com/ubi8/ubi-minimal:latest
+# Build the manager binary
+FROM golang:1.13 as builder
 
-ENV OPERATOR=/usr/local/bin/egressip-ipam-operator \
-    USER_UID=1001 \
-    USER_NAME=egressip-ipam-operator
+WORKDIR /workspace
+# Copy the Go Modules manifests
+COPY go.mod go.mod
+COPY go.sum go.sum
+# cache deps before building and copying source so that we don't need to re-download as much
+# and so that source changes don't invalidate our downloaded layer
+RUN go mod download
 
-# install operator binary
-COPY build/_output/bin/egressip-ipam-operator ${OPERATOR}
+# Copy the go source
+COPY cmd/ cmd/
+COPY pkg/ pkg/
+COPY version/ version/
 
-COPY build/bin /usr/local/bin
-RUN  /usr/local/bin/user_setup
+# Build
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GO111MODULE=on go build -a -o manager ./cmd/manager/main.go
 
-ENTRYPOINT ["/usr/local/bin/entrypoint"]
-
-USER ${USER_UID}
+FROM gcr.io/distroless/static:nonroot
+WORKDIR /
+COPY --from=builder /workspace/manager .
+USER nonroot:nonroot
+ENTRYPOINT ["/manager"]

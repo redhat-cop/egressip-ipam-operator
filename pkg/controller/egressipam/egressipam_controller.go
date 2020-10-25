@@ -94,6 +94,7 @@ func (r *ReconcileEgressIPAM) createCloudProvider() (Cloudprovider, error) {
 	case ocpconfigv1.AWSPlatformType:
 		result = &AwsCloudprovider{
 			OcpClient: r.ocpClient,
+			AwsRegion: infrastructure.Status.PlatformStatus.AWS.Region,
 		}
 		break
 	case ocpconfigv1.AzurePlatformType:
@@ -286,7 +287,7 @@ var _ reconcile.Reconciler = &ReconcileEgressIPAM{}
 
 // ReconcileEgressIPAM reconciles a EgressIPAM object
 type ReconcileEgressIPAM struct {
-	// This client, initialized using mgr.Client() above, is a split client
+	// This Client, initialized using mgr.Client() above, is a split Client
 	// that reads objects from the cache and writes to the apiserver
 	util.ReconcilerBase
 	infrastructure ocpconfigv1.Infrastructure
@@ -302,6 +303,7 @@ func (r *ReconcileEgressIPAM) getDirectClient() (client.Client, error) {
 		log.Error(err, "unable to create result", "with restconfig", r.GetRestConfig())
 		return nil, err
 	}
+
 	return result, nil
 }
 
@@ -411,7 +413,7 @@ func (r *ReconcileEgressIPAM) getInfrastructure() (*ocpconfigv1.Infrastructure, 
 	infrastructure := &ocpconfigv1.Infrastructure{}
 	c, err := client.New(r.GetRestConfig(), client.Options{})
 	if err != nil {
-		log.Error(err, "unable to create client from ", "config", r.GetRestConfig())
+		log.Error(err, "unable to create Client from ", "config", r.GetRestConfig())
 		return &ocpconfigv1.Infrastructure{}, err
 	}
 	err = c.Get(context.TODO(), types.NamespacedName{

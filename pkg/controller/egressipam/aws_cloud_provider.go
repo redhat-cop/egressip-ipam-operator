@@ -199,7 +199,7 @@ func (a *AwsCloudprovider) Initialize(r *ReconcileEgressIPAM) error {
 		}
 
 		if err := a.getAWSClient(); err != nil {
-			log.Error(err, "unable to initialize the AWS client")
+			log.Error(err, "unable to initialize the AWS Client")
 			return err
 		}
 	}
@@ -404,7 +404,7 @@ func (a *AwsCloudprovider) createCredentialRequest() error {
 
 	c, err := a.reconciler.getDirectClient()
 	if err != nil {
-		log.Error(err, "unable to create direct client")
+		log.Error(err, "unable to create direct Client")
 		return err
 	}
 
@@ -419,7 +419,7 @@ func (a *AwsCloudprovider) createCredentialRequest() error {
 
 //goland:noinspection SpellCheckingInspection
 func (a *AwsCloudprovider) getAWSCredentials() (id string, key string, err error) {
-	awsCredentialSecret, err := (*a.OcpClient).GetCredentialSecret()
+	awsCredentialSecret, err := (*a.OcpClient).GetCredentialSecret(a.reconciler)
 	if err != nil {
 		log.Error(err, "unable to get credential secret")
 		return "", "", err

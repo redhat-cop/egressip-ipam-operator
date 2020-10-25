@@ -18,7 +18,7 @@ type OcpClient interface {
 	// name it will throw an error.
 	GetOperatorNamespace() (string, error)
 
-	GetCredentialSecret() (*corev1.Secret, error)
+	GetCredentialSecret(r *ReconcileEgressIPAM) (*corev1.Secret, error)
 
 	// ListMachineSets lists all machine sets defined or returns the error thrown by k8s while retrieving it.
 	ListMachineSets(ctx context.Context) (*machinev1beta1.MachineSetList, error)
@@ -29,7 +29,7 @@ var _ OcpClient = &OcpClientImplementation{}
 type OcpClientImplementation struct {
 	creds corev1.Secret
 
-	client *client.Client
+	Client *client.Client
 }
 
 func (ocp *OcpClientImplementation) GetOperatorNamespace() (string, error) {
@@ -44,7 +44,7 @@ func (ocp *OcpClientImplementation) GetOperatorNamespace() (string, error) {
 	return namespace, nil
 }
 
-func (ocp *OcpClientImplementation) GetCredentialSecret() (*corev1.Secret, error) {
+func (ocp *OcpClientImplementation) GetCredentialSecret(r *ReconcileEgressIPAM) (*corev1.Secret, error) {
 	if !reflect.DeepEqual(ocp.creds, corev1.Secret{}) {
 		return &ocp.creds, nil
 	}
@@ -54,7 +54,12 @@ func (ocp *OcpClientImplementation) GetCredentialSecret() (*corev1.Secret, error
 		return &corev1.Secret{}, err
 	}
 	credentialSecret := &corev1.Secret{}
-	err = (*ocp.client).Get(context.TODO(), types.NamespacedName{
+	c, err := r.getDirectClient()
+	if err != nil {
+		log.Error(err, "unable to get direct client")
+		return nil, err
+	}
+	err = c.Get(context.TODO(), types.NamespacedName{
 		Name:      CredentialsSecretName,
 		Namespace: namespace,
 	}, credentialSecret)
@@ -71,7 +76,7 @@ func (ocp *OcpClientImplementation) GetCredentialSecret() (*corev1.Secret, error
 
 func (ocp *OcpClientImplementation) ListMachineSets(ctx context.Context) (*machinev1beta1.MachineSetList, error) {
 	result := &machinev1beta1.MachineSetList{}
-	err := (*ocp.client).List(ctx, result)
+	err := (*ocp.Client).List(ctx, result)
 
 	return result, err
 }
