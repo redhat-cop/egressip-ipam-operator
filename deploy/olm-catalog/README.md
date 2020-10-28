@@ -77,7 +77,7 @@ Now you should see the operator in the operator catalog, follow the normal insta
 git -C /tmp clone https://github.com/operator-framework/community-operators
 git -C /tmp/community-operators remote add tmp https://github.com/${community_fork}/community-operators
 git -C /tmp/community-operators checkout -b egressip-ipam-operator-${new_version}
-rm -rf /tmp/community-operators/community-operators/egressip-ipam-operator/*
+#rm -rf /tmp/community-operators/community-operators/egressip-ipam-operator/*
 mkdir -p /tmp/community-operators/community-operators/egressip-ipam-operator
 cp -R deploy/olm-catalog/egressip-ipam-operator/* /tmp/community-operators/community-operators/egressip-ipam-operator
 git -C /tmp/community-operators add .
