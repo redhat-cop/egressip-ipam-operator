@@ -162,7 +162,7 @@ If you want to utilize the Operator Lifecycle Manager (OLM) to install this oper
 oc new-project egressip-ipam-operator
 ```
 
-* Once there, you can search for this operator by name: `resource locker operator`. This will then return an item for our operator and you can select it to get started. Once you've arrived here, you'll be presented with an option to install, which will begin the process.
+* Once there, you can search for this operator by name: `egressip ipam operator`. This will then return an item for our operator and you can select it to get started. Once you've arrived here, you'll be presented with an option to install, which will begin the process.
 * After clicking the install button, you can then select the namespace that you would like to install this to as well as the installation strategy you would like to proceed with (`Automatic` or `Manual`).
 * Once you've made your selection, you can select `Subscribe` and the installation will begin. After a few moments you can go ahead and check your namespace and you should see the operator running.
 
