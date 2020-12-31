@@ -1,6 +1,8 @@
 # EgressIP IPAM Operator
 
-[![Build Status](https://travis-ci.org/redhat-cop/egressip-ipam-operator.svg?branch=master)](https://travis-ci.org/redhat-cop/egressip-ipam-operator) [![Docker Repository on Quay](https://quay.io/repository/redhat-cop/egressip-ipam-operator/status "Docker Repository on Quay")](https://quay.io/repository/redhat-cop/egressip-ipam-operator)
+![build status](https://github.com/redhat-cop/egressip-ipam-operator/workflows/push/badge.svg)
+[![Go Report Card](https://goreportcard.com/badge/github.com/redhat-cop/egressip-ipam-operator)](https://goreportcard.com/report/github.com/redhat-cop/egressip-ipam-operator)
+![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/redhat-cop/egressip-ipam-operator)
 
 This operator automates the assignment of egressIPs to namespaces.
 Namespaces can opt in to receiving one or more egressIPs with the following annotation `egressip-ipam-operator.redhat-cop.io/egressipam:<egressIPAM>`, where `egressIPAM` is the CRD that controls how egressIPs are assigned.
@@ -148,7 +150,37 @@ spec:
 
 This is a cluster-level operator that you can deploy in any namespace, `egressip-ipam-operator` is recommended.
 
-You can either deploy it using [`Helm`](https://helm.sh/) or creating the manifests directly.
+It is recommended to deploy this operator via [`OperatorHub`](https://operatorhub.io/), but you can also deploy it using [`Helm`](https://helm.sh/).
+
+### Deploying from OperatorHub
+
+If you want to utilize the Operator Lifecycle Manager (OLM) to install this operator, you can do so in two ways: from the UI or the CLI.
+
+#### Deploying from OperatorHub UI
+
+* If you would like to launch this operator from the UI, you'll need to navigate to the OperatorHub tab in the console. Before starting, make sure you've created the namespace that you want to install this operator to with the following:
+
+```shell
+oc new-project egressip-ipam-operator
+```
+
+* Once there, you can search for this operator by name: `egressip ipam operator`. This will then return an item for our operator and you can select it to get started. Once you've arrived here, you'll be presented with an option to install, which will begin the process.
+* After clicking the install button, you can then select the namespace that you would like to install this to as well as the installation strategy you would like to proceed with (`Automatic` or `Manual`).
+* Once you've made your selection, you can select `Subscribe` and the installation will begin. After a few moments you can go ahead and check your namespace and you should see the operator running.
+
+![EgressIP IPAM Operator](./media/egressip-ipam-operator.png)
+
+#### Deploying from OperatorHub using CLI
+
+If you'd like to launch this operator from the command line, you can use the manifests contained in this repository by running the following:
+
+oc new-project egressip-ipam-operator
+
+```shell
+oc apply -f config/operatorhub -n egressip-ipam-operator
+```
+
+This will create the appropriate OperatorGroup and Subscription and will trigger OLM to launch the operator in the specified namespace.
 
 ### Deploying with Helm
 
@@ -156,53 +188,52 @@ Here are the instructions to install the latest release with Helm.
 
 ```shell
 oc new-project egressip-ipam-operator
-
 helm repo add egressip-ipam-operator https://redhat-cop.github.io/egressip-ipam-operator
 helm repo update
-export egressip_ipam_operator_chart_version=$(helm search repo egressip-ipam-operator/egressip-ipam-operator | grep egressip-ipam-operator/egressip-ipam-operator | awk '{print $2}')
-
-helm fetch egressip-ipam-operator/egressip-ipam-operator --version ${egressip_ipam_operator_chart_version}
-helm template egressip-ipam-operator-${egressip_ipam_operator_chart_version}.tgz --namespace egressip-ipam-operator | oc apply -f - -n egressip-ipam-operator
-
-rm egressip-ipam-operator-${egressip_ipam_operator_chart_version}.tgz
+helm install egressip-ipam-operator egressip-ipam-operator/egressip-ipam-operator
 ```
 
-### Deploying directly with manifests
-
-Here are the instructions to install the latest release creating the manifest directly in OCP.
+This can later be updated with the following commands:
 
 ```shell
-git clone git@github.com:redhat-cop/egressip-ipam-operator.git; cd egressip-ipam-operator
-oc apply -f deploy/crds/redhatcop.redhat.io_egressipams_crd.yaml
+helm repo update
+helm upgrade egressip-ipam-operator egressip-ipam-operator/egressip-ipam-operator
+```
+
+## Development
+
+## Running the operator locally
+
+```shell
+make install
+oc new-project egressip-ipam-operator-local
+kustomize build ./config/local-development | oc apply -f - -n egressip-ipam-operator-local
+export token=$(oc serviceaccounts get-token 'default' -n egressip-ipam-operator-local)
+export NAMESPACE=egressip-ipam-operator-local
+oc login --token ${token}
+make run ENABLE_WEBHOOKS=false
+```
+
+## Building/Pushing the operator image
+
+```shell
+export repo=raffaelespazzoli #replace with yours
+make docker-build IMG=quay.io/$repo/egressip-ipam-operator:latest
+make docker-push IMG=quay.io/$repo/egressip-ipam-operator:latest
+```
+
+## Deploy to OLM via bundle
+
+```shell
+make manifests
+make bundle IMG=quay.io/$repo/egressip-ipam-operator:latest
+operator-sdk bundle validate ./bundle --select-optional name=operatorhub
+make bundle-build BUNDLE_IMG=quay.io/$repo/egressip-ipam-operator-bundle:latest
+podman push quay.io/$repo/egressip-ipam-operator-bundle:latest
+operator-sdk bundle validate quay.io/$repo/egressip-ipam-operator-bundle:latest --select-optional name=operatorhub
 oc new-project egressip-ipam-operator
-oc -n egressip-ipam-operator apply -f deploy
-```
-
-## Local Development
-
-Execute the following steps to develop the functionality locally. It is recommended that development be done using a cluster with `cluster-admin` permissions.
-
-```shell
-go mod download
-```
-
-optionally:
-
-```shell
-go mod vendor
-```
-
-Using the [operator-sdk](https://github.com/operator-framework/operator-sdk), run the operator locally:
-
-```shell
-oc apply -f deploy/crds/redhatcop.redhat.io_egressipams_crd.yaml
-oc new-project egressip-ipam-operator
-oc apply -f deploy/service_account.yaml -n egressip-ipam-operator
-oc apply -f deploy/role.yaml -n egressip-ipam-operator
-oc apply -f deploy/role_binding.yaml -n egressip-ipam-operator
-export token=$(oc serviceaccounts get-token 'egressip-ipam-operator' -n egressip-ipam-operator)
-oc login --token=${token}
-OPERATOR_NAME='egressip-ipam-operator' NAMESPACE='egressip-ipam-operator' operator-sdk --verbose run local --watch-namespace "" --operator-flags="--zap-level=debug"
+operator-sdk cleanup egressip-ipam-operator -n egressip-ipam-operator
+operator-sdk run bundle --install-mode AllNamespaces -n egressip-ipam-operator quay.io/$repo/egressip-ipam-operator-bundle:latest
 ```
 
 ## Testing
@@ -247,13 +278,31 @@ to clean up
 ./test/test.sh delete 15
 ```
 
-## Release Process
-
-To release execute the following:
+## Releasing
 
 ```shell
-git tag -a "<version>" -m "release <version>"
-git push upstream <version>
+git tag -a "<tagname>" -m "<commit message>"
+git push upstream <tagname>
 ```
 
-use this version format: vM.m.z
+If you need to remove a release:
+
+```shell
+git tag -d <tagname>
+git push upstream --delete <tagname>
+```
+
+If you need to "move" a release to the current main
+
+```shell
+git tag -f <tagname>
+git push upstream -f <tagname>
+```
+
+### Cleaning up
+
+```shell
+operator-sdk cleanup egressip-ipam-operator -n egressip-ipam-operator
+oc delete operatorgroup operator-sdk-og
+oc delete catalogsource egressip-ipam-operator-catalog
+```
