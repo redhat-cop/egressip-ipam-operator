@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	multierror "github.com/hashicorp/go-multierror"
+	"github.com/redhat-cop/egressip-ipam-operator/controllers/egressipam/reconcilecontext"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
@@ -58,7 +59,7 @@ func (e *enqueForSelectedEgressIPAMNamespace) Generic(evt event.GenericEvent, q 
 	return
 }
 
-func (r *EgressIPAMReconciler) getReferringNamespaces(rc *reconcileContext) (referringNmespaces map[string]corev1.Namespace, unassignedNamespaces []corev1.Namespace, assignedNamespaces []corev1.Namespace, err error) {
+func (r *EgressIPAMReconciler) getReferringNamespaces(rc *reconcilecontext.ReconcileContext) (referringNmespaces map[string]corev1.Namespace, unassignedNamespaces []corev1.Namespace, assignedNamespaces []corev1.Namespace, err error) {
 	namespaceList := &corev1.NamespaceList{}
 	err = r.GetClient().List(context.TODO(), namespaceList, &client.ListOptions{})
 	if err != nil {
@@ -69,7 +70,7 @@ func (r *EgressIPAMReconciler) getReferringNamespaces(rc *reconcileContext) (ref
 	unassignedNamespaces = []corev1.Namespace{}
 	assignedNamespaces = []corev1.Namespace{}
 	for _, namespace := range namespaceList.Items {
-		if value, ok := namespace.GetAnnotations()[NamespaceAnnotation]; ok && value == rc.egressIPAM.GetName() {
+		if value, ok := namespace.GetAnnotations()[NamespaceAnnotation]; ok && value == rc.EgressIPAM.GetName() {
 			referringNamespaces[namespace.GetName()] = namespace
 			if _, ok := namespace.GetAnnotations()[NamespaceAssociationAnnotation]; ok {
 				assignedNamespaces = append(assignedNamespaces, namespace)
@@ -86,22 +87,22 @@ func (r *EgressIPAMReconciler) getReferringNamespaces(rc *reconcileContext) (ref
 // returns a map if CIDRs and array of IPs CIDR are from the egressIPAM, IPs are currently assigned IPs.
 // IPs in an array are supposed to belong the the CIDR, but no check is currently in place to ensure it.
 // it expects that each namespace passed as parametr has exaclty the n IPs assigned where n is the number of CIDRs in egressIPAM
-func (r *EgressIPAMReconciler) sortIPsByCIDR(rc *reconcileContext) (map[string][]net.IP, error) {
+func (r *EgressIPAMReconciler) sortIPsByCIDR(rc *reconcilecontext.ReconcileContext) (map[string][]net.IP, error) {
 	IPsByCIDR := map[string][]net.IP{}
-	for _, cidr := range rc.cIDRs {
+	for _, cidr := range rc.CIDRs {
 		IPsByCIDR[cidr] = []net.IP{}
 	}
-	for _, namespace := range rc.initiallyAssignedNamespaces {
+	for _, namespace := range rc.InitiallyAssignedNamespaces {
 		if value, ok := namespace.GetAnnotations()[NamespaceAssociationAnnotation]; ok {
 			ipstrings := strings.Split(value, ",")
-			for i, cidr := range rc.cIDRs {
+			for i, cidr := range rc.CIDRs {
 				IP := net.ParseIP(ipstrings[i])
 				if IP == nil {
 					err := errors.New("unable to parse IP: " + ipstrings[i] + " in namespace: " + namespace.GetName())
 					r.Log.Error(err, "unable to parse ", "IP", ipstrings[i], "for namespace", namespace.GetName())
 					return map[string][]net.IP{}, err
 				}
-				if !rc.netCIDRByCIDR[cidr].Contains(IP) {
+				if !rc.NetCIDRByCIDR[cidr].Contains(IP) {
 					err := errors.New("IP: " + IP.String() + " does not belong to CIDR: " + cidr + " for namespace" + namespace.GetName())
 					r.Log.Error(err, "assigned ", "IP", IP.String(), "does not belong to CIDR", cidr, "for namespace", namespace.GetName())
 					return map[string][]net.IP{}, err
@@ -113,10 +114,10 @@ func (r *EgressIPAMReconciler) sortIPsByCIDR(rc *reconcileContext) (map[string][
 	return IPsByCIDR, nil
 }
 
-func (r *EgressIPAMReconciler) removeNamespaceAssignedIPs(rc *reconcileContext) error {
+func (r *EgressIPAMReconciler) removeNamespaceAssignedIPs(rc *reconcilecontext.ReconcileContext) error {
 	results := make(chan error)
 	defer close(results)
-	for _, namespace := range rc.initiallyAssignedNamespaces {
+	for _, namespace := range rc.InitiallyAssignedNamespaces {
 		namespacec := namespace.DeepCopy()
 		go func() {
 			delete(namespacec.GetAnnotations(), NamespaceAssociationAnnotation)
@@ -131,7 +132,7 @@ func (r *EgressIPAMReconciler) removeNamespaceAssignedIPs(rc *reconcileContext) 
 		}()
 	}
 	var result *multierror.Error
-	for range rc.initiallyAssignedNamespaces {
+	for range rc.InitiallyAssignedNamespaces {
 		multierror.Append(result, <-results)
 	}
 	return result.ErrorOrNil()

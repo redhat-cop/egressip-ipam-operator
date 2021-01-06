@@ -9,6 +9,7 @@ import (
 	"github.com/go-logr/logr"
 	multierror "github.com/hashicorp/go-multierror"
 	ocpnetv1 "github.com/openshift/api/network/v1"
+	"github.com/redhat-cop/egressip-ipam-operator/controllers/egressipam/reconcilecontext"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
@@ -99,10 +100,10 @@ func (r *EgressIPAMReconciler) getNamespace(netnamespace *ocpnetv1.NetNamespace)
 	return *namespace, nil
 }
 
-func (r *EgressIPAMReconciler) reconcileNetNamespaces(rc *reconcileContext) error {
+func (r *EgressIPAMReconciler) reconcileNetNamespaces(rc *reconcilecontext.ReconcileContext) error {
 	results := make(chan error)
 	defer close(results)
-	for _, namespace := range rc.finallyAssignedNamespaces {
+	for _, namespace := range rc.FinallyAssignedNamespaces {
 		namespacec := namespace.DeepCopy()
 		go func() {
 			ipstring, ok := namespacec.Annotations[NamespaceAssociationAnnotation]
@@ -111,7 +112,7 @@ func (r *EgressIPAMReconciler) reconcileNetNamespaces(rc *reconcileContext) erro
 				return
 			}
 			IPs := strings.Split(ipstring, ",")
-			netnamespace := rc.netNamespaces[namespacec.GetName()]
+			netnamespace := rc.NetNamespaces[namespacec.GetName()]
 			if !reflect.DeepEqual(netnamespace.EgressIPs, IPs) {
 				netnamespace.EgressIPs = GetNetNamespaceEgressIPs(IPs)
 				err := r.GetClient().Update(context.TODO(), &netnamespace, &client.UpdateOptions{})
@@ -126,19 +127,19 @@ func (r *EgressIPAMReconciler) reconcileNetNamespaces(rc *reconcileContext) erro
 		}()
 	}
 	result := &multierror.Error{}
-	for range rc.finallyAssignedNamespaces {
+	for range rc.FinallyAssignedNamespaces {
 		multierror.Append(result, <-results)
 	}
 	return result.ErrorOrNil()
 }
 
-func (r *EgressIPAMReconciler) removeNetnamespaceAssignedIPs(rc *reconcileContext) error {
+func (r *EgressIPAMReconciler) removeNetnamespaceAssignedIPs(rc *reconcilecontext.ReconcileContext) error {
 	results := make(chan error)
 	defer close(results)
-	for _, namespace := range rc.referringNamespaces {
+	for _, namespace := range rc.ReferringNamespaces {
 		namespacec := namespace.DeepCopy()
 		go func() {
-			netnamespace := rc.netNamespaces[namespacec.GetName()]
+			netnamespace := rc.NetNamespaces[namespacec.GetName()]
 			if !reflect.DeepEqual(netnamespace.EgressIPs, []string{}) {
 				netnamespace.EgressIPs = []ocpnetv1.NetNamespaceEgressIP{}
 				err := r.GetClient().Update(context.TODO(), &netnamespace, &client.UpdateOptions{})
@@ -153,13 +154,13 @@ func (r *EgressIPAMReconciler) removeNetnamespaceAssignedIPs(rc *reconcileContex
 		}()
 	}
 	result := &multierror.Error{}
-	for range rc.finallyAssignedNamespaces {
+	for range rc.FinallyAssignedNamespaces {
 		multierror.Append(result, <-results)
 	}
 	return result.ErrorOrNil()
 }
 
-func (r *EgressIPAMReconciler) getAllNetNamespaces(rc *reconcileContext) (map[string]ocpnetv1.NetNamespace, error) {
+func (r *EgressIPAMReconciler) getAllNetNamespaces(rc *reconcilecontext.ReconcileContext) (map[string]ocpnetv1.NetNamespace, error) {
 	netnamespaceList := &ocpnetv1.NetNamespaceList{}
 	err := r.GetClient().List(context.TODO(), netnamespaceList, &client.ListOptions{})
 	if err != nil {
