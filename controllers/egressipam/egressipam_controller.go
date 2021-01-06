@@ -27,6 +27,7 @@ import (
 	ocpconfigv1 "github.com/openshift/api/config/v1"
 	ocpnetv1 "github.com/openshift/api/network/v1"
 	cloudcredentialv1 "github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1"
+	machinev1beta1 "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
 	redhatcopv1alpha1 "github.com/redhat-cop/egressip-ipam-operator/api/v1alpha1"
 	"github.com/redhat-cop/egressip-ipam-operator/controllers/egressipam/aws"
 	"github.com/redhat-cop/egressip-ipam-operator/controllers/egressipam/baremetal"
@@ -474,7 +475,6 @@ func (r *EgressIPAMReconciler) loadReconcileContext(context context.Context, egr
 	result := &multierror.Error{}
 	for range []string{"nodes", "hostsubnets", "namespaces", "netnamespaces"} {
 		err := <-results
-		r.Log.V(1).Info("receiving", "error", err)
 		multierror.Append(result, err)
 	}
 
@@ -520,7 +520,7 @@ func (r *EgressIPAMReconciler) loadReconcileContext(context context.Context, egr
 	switch rc.Infrastructure.Status.Platform {
 	case ocpconfigv1.AWSPlatformType:
 		{
-			dc, err := r.GetDirectClient()
+			dc, err := r.GetDirectClientWithSchemeBuilders(machinev1beta1.AddToScheme)
 			if err != nil {
 				r.Log.Error(err, "unable to get direct client")
 				return &reconcilecontext.ReconcileContext{}, err
@@ -551,7 +551,7 @@ func (r *EgressIPAMReconciler) loadReconcileContext(context context.Context, egr
 		}
 		rc.SelectedInstances = selectedInstances
 
-		r.Log.V(1).Info("", "selectedAWSInstances", rc.SelectedInstances)
+		//r.Log.V(1).Info("", "selectedAWSInstances", rc.SelectedInstances)
 		results <- nil
 		return
 	}()
@@ -573,10 +573,8 @@ func (r *EgressIPAMReconciler) loadReconcileContext(context context.Context, egr
 	result = &multierror.Error{}
 	for range []string{"awsinstance", "usedIPS"} {
 		err := <-results
-		r.Log.V(1).Info("receiving", "error", err)
 		multierror.Append(result, err)
 	}
-	r.Log.V(1).Info("after aws initialization", "multierror", result.Error, "ErrorOrNil", result.ErrorOrNil())
 	if result.ErrorOrNil() != nil {
 		r.Log.Error(result, "unable ro run parallel aws initialization")
 		return &reconcilecontext.ReconcileContext{}, result

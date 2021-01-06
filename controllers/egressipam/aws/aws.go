@@ -348,7 +348,7 @@ func (i *AWSInfra) getAWSUsedIPsByCIDR(rc *reconcilecontext.ReconcileContext) (m
 		i.log.Error(err, "unable to retrieve subnets ", "with request", describeSubnetInput)
 		return map[string][]net.IP{}, err
 	}
-	i.log.V(1).Info("", "describeSubnetResult", describeSubnetResult)
+	//i.log.V(1).Info("", "describeSubnetResult", describeSubnetResult)
 
 	subnetIDs := []*string{}
 	for _, subnet := range describeSubnetResult.Subnets {
