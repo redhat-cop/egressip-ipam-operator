@@ -1,7 +1,6 @@
 package aws
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"net"
@@ -310,7 +309,7 @@ func (i *AWSInfra) removeAllAWSAssignedIPs(rc *reconcilecontext.ReconcileContext
 //currently it is requred that cidr declared in the egress map, correspon to cidr declared in subnets.
 func (i *AWSInfra) getAWSUsedIPsByCIDR(rc *reconcilecontext.ReconcileContext) (map[string][]net.IP, error) {
 	machinesetList := &machinev1beta1.MachineSetList{}
-	err := i.dc.List(context.TODO(), machinesetList, &client.ListOptions{})
+	err := i.dc.List(rc.Context, machinesetList, &client.ListOptions{})
 	if err != nil {
 		i.log.Error(err, "unable to load all machinesets")
 		return map[string][]net.IP{}, err

@@ -91,9 +91,9 @@ func (e *enqueForSelectingEgressIPAMNode) Generic(evt event.GenericEvent, q work
 	return
 }
 
-func (r *EgressIPAMReconciler) getNode(hostsubnet *ocpnetv1.HostSubnet) (corev1.Node, error) {
+func (r *EgressIPAMReconciler) getNode(context context.Context, hostsubnet *ocpnetv1.HostSubnet) (corev1.Node, error) {
 	node := &corev1.Node{}
-	err := r.GetClient().Get(context.TODO(), types.NamespacedName{
+	err := r.GetClient().Get(context, types.NamespacedName{
 		Name: hostsubnet.Host,
 	}, node)
 	if err != nil {
@@ -145,7 +145,7 @@ func (r *EgressIPAMReconciler) getNodesIPsByCIDR(rc *reconcilecontext.ReconcileC
 
 func (r *EgressIPAMReconciler) getAllNodes(rc *reconcilecontext.ReconcileContext) (map[string]corev1.Node, error) {
 	nodeList := &corev1.NodeList{}
-	err := r.GetClient().List(context.TODO(), nodeList, &client.ListOptions{})
+	err := r.GetClient().List(rc.Context, nodeList, &client.ListOptions{})
 	if err != nil {
 		r.Log.Error(err, "unable to list all the nodes")
 		return map[string]corev1.Node{}, err

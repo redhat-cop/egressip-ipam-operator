@@ -63,7 +63,7 @@ type EgressIPAMReconciler struct {
 	util.ReconcilerBase
 	Log            logr.Logger
 	controllerName string
-	infrastructure ocpconfigv1.Infrastructure
+	infrastructure *ocpconfigv1.Infrastructure
 	creds          corev1.Secret
 }
 
@@ -216,29 +216,12 @@ func (r *EgressIPAMReconciler) processReconcileContext(rc *reconcilecontext.Reco
 }
 
 // GetInfrastructure return the openshift infrastructure object, notice that this is looked up only once in the duration of the operatgro lifecyle and the it's cached.
-func (r *EgressIPAMReconciler) GetInfrastructure() (*ocpconfigv1.Infrastructure, error) {
-	if !reflect.DeepEqual(r.infrastructure, ocpconfigv1.Infrastructure{}) {
-		return &r.infrastructure, nil
-	}
-	infrastructure := &ocpconfigv1.Infrastructure{}
-	client, err := r.GetDirectClientWithSchemeBuilders(ocpconfigv1.Install)
-	if err != nil {
-		r.Log.Error(err, "unable to create client from ", "config", r.GetRestConfig())
-		return &ocpconfigv1.Infrastructure{}, err
-	}
-	err = client.Get(context.TODO(), types.NamespacedName{
-		Name: "cluster",
-	}, infrastructure)
-	if err != nil {
-		r.Log.Error(err, "unable to retrieve cluster's infrastrcuture resource ")
-		return &ocpconfigv1.Infrastructure{}, err
-	}
-	r.infrastructure = *infrastructure
-	return &r.infrastructure, nil
+func (r *EgressIPAMReconciler) GetInfrastructure() *ocpconfigv1.Infrastructure {
+	return r.infrastructure
 }
 
 // GetCredentialSecret returs the credentials secret to be used to instantiate cloud providers
-func (r *EgressIPAMReconciler) GetCredentialSecret() (*corev1.Secret, error) {
+func (r *EgressIPAMReconciler) GetCredentialSecret(context context.Context) (*corev1.Secret, error) {
 	if !reflect.DeepEqual(r.creds, corev1.Secret{}) {
 		return &r.creds, nil
 	}
@@ -248,7 +231,7 @@ func (r *EgressIPAMReconciler) GetCredentialSecret() (*corev1.Secret, error) {
 		return &corev1.Secret{}, err
 	}
 	credentialSecret := &corev1.Secret{}
-	err = r.GetClient().Get(context.TODO(), types.NamespacedName{
+	err = r.GetClient().Get(context, types.NamespacedName{
 		Name:      credentialsSecretName,
 		Namespace: namespace,
 	}, credentialSecret)
@@ -357,14 +340,10 @@ func (r *EgressIPAMReconciler) loadReconcileContext(context context.Context, egr
 		EgressIPAM: egressIPAM,
 		Context:    context,
 	}
-	infrastructure, err := r.GetInfrastructure()
-	if err != nil {
-		r.Log.Error(err, "unable get infrastructure")
-		return &reconcilecontext.ReconcileContext{}, err
-	}
-	rc.Infrastructure = infrastructure
-	if isCloudInfrastructure(infrastructure) {
-		cloudCredentialsSecret, err := r.GetCredentialSecret()
+	rc.Infrastructure = r.GetInfrastructure()
+
+	if isCloudInfrastructure(rc.Infrastructure) {
+		cloudCredentialsSecret, err := r.GetCredentialSecret(rc.Context)
 		if err != nil {
 			r.Log.Error(err, "unable get credentials secret")
 			return &reconcilecontext.ReconcileContext{}, err
@@ -626,7 +605,23 @@ func (r *EgressIPAMReconciler) createOrUpdateResourceWithClient(c client.Client,
 func (r *EgressIPAMReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.controllerName = "EgressIPAM_controller"
 
-	err := r.createCredentialRequest()
+	infrastructure := &ocpconfigv1.Infrastructure{}
+	client, err := r.GetDirectClientWithSchemeBuilders(ocpconfigv1.Install)
+	if err != nil {
+		r.Log.Error(err, "unable to create client from ", "config", r.GetRestConfig())
+		return err
+	}
+	err = client.Get(context.TODO(), types.NamespacedName{
+		Name: "cluster",
+	}, infrastructure)
+	if err != nil {
+		r.Log.Error(err, "unable to retrieve cluster's infrastrcuture resource ")
+		return err
+	}
+
+	r.infrastructure = infrastructure
+
+	err = r.createCredentialRequest()
 	if err != nil {
 		r.Log.Error(err, "unable to create credential request")
 		return err
@@ -762,11 +757,7 @@ func (r *EgressIPAMReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 func (r *EgressIPAMReconciler) createCredentialRequest() error {
 
-	infrastructure, err := r.GetInfrastructure()
-	if err != nil {
-		r.Log.Error(err, "Unable to retrieve current cluster infrastructure")
-		return err
-	}
+	infrastructure := r.GetInfrastructure()
 
 	var providerSpec runtime.Object
 

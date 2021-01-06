@@ -1,7 +1,6 @@
 package egressipam
 
 import (
-	"context"
 	"encoding/binary"
 	"errors"
 	"net"
@@ -88,7 +87,7 @@ func (r *EgressIPAMReconciler) assignIPsToNamespaces(rc *reconcilecontext.Reconc
 		}
 		r.Log.Info("ips assigned to", "namespace", namespace.GetName(), "ips", ipstrings)
 		namespace.ObjectMeta.Annotations[NamespaceAssociationAnnotation] = strings.Join(ipstrings, ",")
-		err = r.GetClient().Update(context.TODO(), namespace, &client.UpdateOptions{})
+		err = r.GetClient().Update(rc.Context, namespace, &client.UpdateOptions{})
 		if err != nil {
 			r.Log.Error(err, "unable to update", "namespace", namespace.GetName())
 			return []corev1.Namespace{}, err

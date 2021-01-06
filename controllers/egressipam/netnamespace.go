@@ -115,7 +115,7 @@ func (r *EgressIPAMReconciler) reconcileNetNamespaces(rc *reconcilecontext.Recon
 			netnamespace := rc.NetNamespaces[namespacec.GetName()]
 			if !reflect.DeepEqual(netnamespace.EgressIPs, IPs) {
 				netnamespace.EgressIPs = GetNetNamespaceEgressIPs(IPs)
-				err := r.GetClient().Update(context.TODO(), &netnamespace, &client.UpdateOptions{})
+				err := r.GetClient().Update(rc.Context, &netnamespace, &client.UpdateOptions{})
 				if err != nil {
 					r.Log.Error(err, "unable to update ", "netnamespace", netnamespace.GetName())
 					results <- err
@@ -142,7 +142,7 @@ func (r *EgressIPAMReconciler) removeNetnamespaceAssignedIPs(rc *reconcilecontex
 			netnamespace := rc.NetNamespaces[namespacec.GetName()]
 			if !reflect.DeepEqual(netnamespace.EgressIPs, []string{}) {
 				netnamespace.EgressIPs = []ocpnetv1.NetNamespaceEgressIP{}
-				err := r.GetClient().Update(context.TODO(), &netnamespace, &client.UpdateOptions{})
+				err := r.GetClient().Update(rc.Context, &netnamespace, &client.UpdateOptions{})
 				if err != nil {
 					r.Log.Error(err, "unable to update ", "netnamespace", netnamespace.GetName())
 					results <- err
@@ -162,7 +162,7 @@ func (r *EgressIPAMReconciler) removeNetnamespaceAssignedIPs(rc *reconcilecontex
 
 func (r *EgressIPAMReconciler) getAllNetNamespaces(rc *reconcilecontext.ReconcileContext) (map[string]ocpnetv1.NetNamespace, error) {
 	netnamespaceList := &ocpnetv1.NetNamespaceList{}
-	err := r.GetClient().List(context.TODO(), netnamespaceList, &client.ListOptions{})
+	err := r.GetClient().List(rc.Context, netnamespaceList, &client.ListOptions{})
 	if err != nil {
 		r.Log.Error(err, "unable to list all netnamespaces")
 		return map[string]ocpnetv1.NetNamespace{}, err

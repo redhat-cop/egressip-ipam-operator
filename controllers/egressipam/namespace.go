@@ -1,7 +1,6 @@
 package egressipam
 
 import (
-	"context"
 	"errors"
 	"net"
 	"strings"
@@ -61,7 +60,7 @@ func (e *enqueForSelectedEgressIPAMNamespace) Generic(evt event.GenericEvent, q 
 
 func (r *EgressIPAMReconciler) getReferringNamespaces(rc *reconcilecontext.ReconcileContext) (referringNmespaces map[string]corev1.Namespace, unassignedNamespaces []corev1.Namespace, assignedNamespaces []corev1.Namespace, err error) {
 	namespaceList := &corev1.NamespaceList{}
-	err = r.GetClient().List(context.TODO(), namespaceList, &client.ListOptions{})
+	err = r.GetClient().List(rc.Context, namespaceList, &client.ListOptions{})
 	if err != nil {
 		r.Log.Error(err, "unable to retrive all namespaces")
 		return map[string]corev1.Namespace{}, []corev1.Namespace{}, []corev1.Namespace{}, err
@@ -121,7 +120,7 @@ func (r *EgressIPAMReconciler) removeNamespaceAssignedIPs(rc *reconcilecontext.R
 		namespacec := namespace.DeepCopy()
 		go func() {
 			delete(namespacec.GetAnnotations(), NamespaceAssociationAnnotation)
-			err := r.GetClient().Update(context.TODO(), namespacec, &client.UpdateOptions{})
+			err := r.GetClient().Update(rc.Context, namespacec, &client.UpdateOptions{})
 			if err != nil {
 				r.Log.Error(err, "unable to update ", "namespace", namespacec.GetName())
 				results <- err

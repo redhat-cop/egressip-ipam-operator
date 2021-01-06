@@ -54,14 +54,13 @@ type NamespaceReconciler struct {
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.0/pkg/reconcile
-func (r *NamespaceReconciler) Reconcile(context context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *NamespaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("namespace", req.NamespacedName)
 
 	// your logic here
-
 	// Fetch the Namespace instance
 	instance := &corev1.Namespace{}
-	err := r.GetClient().Get(context, req.NamespacedName, instance)
+	err := r.GetClient().Get(ctx, req.NamespacedName, instance)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile request.
@@ -73,25 +72,25 @@ func (r *NamespaceReconciler) Reconcile(context context.Context, req ctrl.Reques
 		return reconcile.Result{}, err
 	}
 
-	err = r.cleanUpNamespaceAndNetNamespace(instance)
+	err = r.cleanUpNamespaceAndNetNamespace(ctx, instance)
 	if err != nil {
 		log.Error(err, "unable to clean up", "netnamespace", instance.GetName())
-		return r.ManageError(context, instance, err)
+		return r.ManageError(ctx, instance, err)
 	}
 
-	return r.ManageSuccess(context, instance)
+	return r.ManageSuccess(ctx, instance)
 }
 
-func (r *NamespaceReconciler) cleanUpNamespaceAndNetNamespace(namespace *corev1.Namespace) error {
+func (r *NamespaceReconciler) cleanUpNamespaceAndNetNamespace(context context.Context, namespace *corev1.Namespace) error {
 	netNamespace := &ocpnetv1.NetNamespace{}
-	err := r.GetClient().Get(context.TODO(), types.NamespacedName{Name: namespace.GetName()}, netNamespace)
+	err := r.GetClient().Get(context, types.NamespacedName{Name: namespace.GetName()}, netNamespace)
 	if err != nil {
 		r.Log.Error(err, "unable to retrieve", "netnamespace", namespace.GetName())
 		return err
 	}
 	if !reflect.DeepEqual(netNamespace.EgressIPs, []string{}) {
 		netNamespace.EgressIPs = []ocpnetv1.NetNamespaceEgressIP{}
-		err := r.GetClient().Update(context.TODO(), netNamespace, &client.UpdateOptions{})
+		err := r.GetClient().Update(context, netNamespace, &client.UpdateOptions{})
 		if err != nil {
 			r.Log.Error(err, "unable to update ", "netnamespace", netNamespace.GetName())
 			return err
@@ -99,7 +98,7 @@ func (r *NamespaceReconciler) cleanUpNamespaceAndNetNamespace(namespace *corev1.
 	}
 	if _, ok := namespace.GetAnnotations()[egressipam.NamespaceAssociationAnnotation]; ok {
 		delete(namespace.Annotations, egressipam.NamespaceAssociationAnnotation)
-		err := r.GetClient().Update(context.TODO(), namespace, &client.UpdateOptions{})
+		err := r.GetClient().Update(context, namespace, &client.UpdateOptions{})
 		if err != nil {
 			r.Log.Error(err, "unable to update ", "namespace", namespace.GetName())
 			return err
