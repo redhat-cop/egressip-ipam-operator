@@ -48,7 +48,7 @@ func NewAWSInfra(directClient client.Client, rc *reconcilecontext.ReconcileConte
 
 //GetSelectedInstances returns a map of nodename and corresponding instance info
 func (i *AWSInfra) GetSelectedInstances(rc *reconcilecontext.ReconcileContext) (map[string]interface{}, error) {
-	instanceMap, err := i.getAWSIstances(rc.SelectedNodes)
+	instanceMap, err := i.getAWSInstances(rc.SelectedNodes)
 	if err != nil {
 		i.log.Error(err, "unable to retrieve aws istances for selected nodes")
 		return map[string]interface{}{}, err
@@ -76,7 +76,7 @@ func (i *AWSInfra) GetUsedIPsByCIDR(rc *reconcilecontext.ReconcileContext) (map[
 		}
 		IPsByCIDR[cidr] = append(IPsByCIDR[cidr], ipmath.DeltaIP(base, 1), ipmath.DeltaIP(base, 2), ipmath.DeltaIP(base, 3))
 	}
-	return i.getAWSUsedIPsByCIDR(rc)
+	return IPsByCIDR, nil
 }
 
 //ReconcileInstanceSecondaryIPs will make sure that Assigned Egress IPs to instances are correclty reconciled
@@ -101,7 +101,7 @@ func (i *AWSInfra) RemoveAllAssignedIPs(rc *reconcilecontext.ReconcileContext) e
 	return i.removeAllAWSAssignedIPs(rc)
 }
 
-func (i *AWSInfra) getAWSIstances(nodes map[string]corev1.Node) (map[string]*ec2.Instance, error) {
+func (i *AWSInfra) getAWSInstances(nodes map[string]corev1.Node) (map[string]*ec2.Instance, error) {
 	instanceIds := []*string{}
 	for _, node := range nodes {
 		instanceIds = append(instanceIds, aws.String(getAWSIDFromProviderID(node.Spec.ProviderID)))
