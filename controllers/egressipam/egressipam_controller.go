@@ -30,6 +30,7 @@ import (
 	machinev1beta1 "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
 	redhatcopv1alpha1 "github.com/redhat-cop/egressip-ipam-operator/api/v1alpha1"
 	"github.com/redhat-cop/egressip-ipam-operator/controllers/egressipam/aws"
+	"github.com/redhat-cop/egressip-ipam-operator/controllers/egressipam/azure"
 	"github.com/redhat-cop/egressip-ipam-operator/controllers/egressipam/baremetal"
 	"github.com/redhat-cop/egressip-ipam-operator/controllers/egressipam/reconcilecontext"
 	"github.com/redhat-cop/operator-utils/pkg/util"
@@ -511,6 +512,20 @@ func (r *EgressIPAMReconciler) loadReconcileContext(context context.Context, egr
 			}
 			rc.Infra = infra
 		}
+	case ocpconfigv1.AzurePlatformType:
+		{
+			dc, err := r.GetDirectClient()
+			if err != nil {
+				r.Log.Error(err, "unable to get direct client")
+				return &reconcilecontext.ReconcileContext{}, err
+			}
+			infra, err := azure.NewAzureInfra(dc, rc)
+			if err != nil {
+				r.Log.Error(err, "unable to instatiate azure infra")
+				return &reconcilecontext.ReconcileContext{}, err
+			}
+			rc.Infra = infra
+		}
 	default:
 		{
 			infra := baremetal.NewBareMetalInfra()
@@ -520,7 +535,7 @@ func (r *EgressIPAMReconciler) loadReconcileContext(context context.Context, egr
 
 	results = make(chan error)
 	defer close(results)
-
+	// instance
 	go func() {
 		selectedInstances, err := rc.Infra.GetSelectedInstances(rc)
 		if err != nil {
@@ -530,11 +545,11 @@ func (r *EgressIPAMReconciler) loadReconcileContext(context context.Context, egr
 		}
 		rc.SelectedInstances = selectedInstances
 
-		//r.Log.V(1).Info("", "selectedAWSInstances", rc.SelectedInstances)
+		//r.Log.V(1).Info("", "selectedInstances", rc.SelectedInstances)
 		results <- nil
 		return
 	}()
-
+	// used IPs
 	go func() {
 		usedIPsByCIDR, err := rc.Infra.GetUsedIPsByCIDR(rc)
 		if err != nil {
@@ -544,13 +559,13 @@ func (r *EgressIPAMReconciler) loadReconcileContext(context context.Context, egr
 		}
 		rc.UsedIPsByCIDR = usedIPsByCIDR
 
-		r.Log.V(1).Info("", "awsUsedIPsByCIDR", rc.UsedIPsByCIDR)
+		r.Log.V(1).Info("", "Used IPs By CIDR", rc.UsedIPsByCIDR)
 		results <- nil
 		return
 	}()
 	// collect results
 	result = &multierror.Error{}
-	for range []string{"awsinstance", "usedIPS"} {
+	for range []string{"instances", "usedIPS"} {
 		err := <-results
 		multierror.Append(result, err)
 	}
@@ -765,6 +780,10 @@ func (r *EgressIPAMReconciler) createCredentialRequest() error {
 	case ocpconfigv1.AWSPlatformType:
 		{
 			providerSpec = aws.GetAWSCredentialsRequestProviderSpec()
+		}
+	case ocpconfigv1.AzurePlatformType:
+		{
+			providerSpec = azure.GetAzureCredentialsRequestProviderSpec()
 		}
 	default:
 		return nil

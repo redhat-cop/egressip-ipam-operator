@@ -1,0 +1,15 @@
+apiVersion: redhatcop.redhat.io/v1alpha1
+kind: EgressIPAM
+metadata:
+  name: egressipam-azure
+spec:
+  # Add fields here
+  cidrAssignments:
+    - labelValue: ""
+      CIDR: 10.0.32.0/19
+      reservedIPs: 
+      - "10.0.32.8"
+  topologyLabel: "node-role.kubernetes.io/worker"
+  nodeSelector:
+    matchLabels:
+      node-role.kubernetes.io/worker: ""

@@ -154,7 +154,7 @@ func (r *EgressIPAMReconciler) removeNetnamespaceAssignedIPs(rc *reconcilecontex
 		}()
 	}
 	result := &multierror.Error{}
-	for range rc.FinallyAssignedNamespaces {
+	for range rc.ReferringNamespaces {
 		multierror.Append(result, <-results)
 	}
 	return result.ErrorOrNil()

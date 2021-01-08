@@ -79,15 +79,48 @@ spec:
 
 When a namespace with the opt-in annotation is created, the following happens:
 
-1. for each of the CIDRs, an available IP is selected and assigned to the namespace
+1. for each of the CIDRs, an available IP is selected and assigned to the namespace.
 2. the relative `netnamespace` is update to reflect the assignment (multiple IPs will be assigned in this case).
-3. one node per zone is selected to carry the egressIP
-4. the relative aws machines are assigned the additional IP on the main interface (support for secondary interfaces in not available)
+3. one node per zone is selected to carry the egressIP.
+4. the relative aws machines are assigned the additional IP on the main interface (support for secondary interfaces in not available).
 5. the relative `hostsubnets` are updated to reflect the assigned IP, the `egressIP` field is updated.
+
+## Support for Azure
+
+In Azure as well as other cloud providers, one cannot freely assign IPs to machines. Additional steps need to be performed in this case. Considering this EgressIPAM
+
+```yaml
+apiVersion: redhatcop.redhat.io/v1alpha1
+kind: EgressIPAM
+metadata:
+  name: egressipam-azure
+spec:
+  # Add fields here
+  cidrAssignments:
+    - labelValue: ""
+      CIDR: 10.0.32.0/19
+      reservedIPs: 
+      - "10.0.32.8"
+  topologyLabel: "node-role.kubernetes.io/worker"
+  nodeSelector:
+    matchLabels:
+      node-role.kubernetes.io/worker: ""
+```
+
+Differently from AWS, in Azure networks can span multiple AZs and that is the way OCP is installed by default.
+Currently support for Azure allows you to deploy EgressIPs on the default vnet: `<infra-id>-vnet`
+
+When a namespace with the opt-in annotation is created, the following happens:
+
+1. for the default vnet CIDR, an available IP is selected and assigned to the namespace.
+2. the relative `netnamespace` is update to reflect the assignment (multiple IPs will be assigned in this case).
+3. one node in the default vnet is selected to carry the egressIP.
+4. the relative Azure machine is assigned the additional IP on the primary NIC (support for secondary interfaces in not available).
+5. the relative `hostsubnet` is updated to reflect the assigned IP, the `egressIP` field is updated.
 
 ## Support for vSphere
 
-Egress-ipam-operator treats vSphere as a bare metal installation, so it will work with a network setup in which secondary IPs can be added to the VMs with no intereaction with the vSphere API.
+Egress-ipam-operator treats vSphere as a bare metal installation, so it will work with a network setup in which secondary IPs can be added to the VMs with no interaction with the vSphere API.
 You can use the egressip-ipam-operator on your vSphere installation assuming that the nodes you want to use are labelled according to the `topologyLabel`. You can label them manually, or by changing the MachineSet configuration:
 
 ```yaml
@@ -276,6 +309,23 @@ to clean up
 
 ```shell
 ./test/test.sh delete 15
+```
+
+### Azure test
+
+based on the output of the below command, configure your egressIPAM for AWS.
+
+```shell
+export network_id=$(oc get infrastructure cluster -o jsonpath='{.status.infrastructureName}')-vnet
+export resource_group=$(oc get infrastructure cluster -o jsonpath='{.status.platformStatus.azure.networkResourceGroupName}')
+az network vnet show -n ${network_id} --resource-group ${resource_group} | jq -r '.subnets[] | select (.name | contains("worker-subnet")) | .addressPrefix'
+```
+
+once the egress IPAM object is ready run the following:
+
+```shell
+oc apply -f test/egressIPAM-Azure.yaml
+oc apply -f test/namespace-Azure.yaml
 ```
 
 ## Releasing
