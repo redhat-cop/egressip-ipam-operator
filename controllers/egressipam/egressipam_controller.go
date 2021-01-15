@@ -65,7 +65,6 @@ type EgressIPAMReconciler struct {
 	Log            logr.Logger
 	controllerName string
 	infrastructure *ocpconfigv1.Infrastructure
-	creds          corev1.Secret
 }
 
 // +kubebuilder:rbac:groups=redhatcop.redhat.io,resources=egressipams,verbs=get;list;watch;create;update;patch;delete
@@ -223,14 +222,12 @@ func (r *EgressIPAMReconciler) GetInfrastructure() *ocpconfigv1.Infrastructure {
 
 // GetCredentialSecret returs the credentials secret to be used to instantiate cloud providers
 func (r *EgressIPAMReconciler) GetCredentialSecret(context context.Context) (*corev1.Secret, error) {
-	if !reflect.DeepEqual(r.creds, corev1.Secret{}) {
-		return &r.creds, nil
-	}
 	namespace, err := r.GetOperatorNamespace()
 	if err != nil {
 		r.Log.Error(err, "unable to get operator's namespace")
 		return &corev1.Secret{}, err
 	}
+
 	credentialSecret := &corev1.Secret{}
 	err = r.GetClient().Get(context, types.NamespacedName{
 		Name:      credentialsSecretName,
@@ -243,8 +240,8 @@ func (r *EgressIPAMReconciler) GetCredentialSecret(context context.Context) (*co
 		})
 		return &corev1.Secret{}, err
 	}
-	r.creds = *credentialSecret
-	return &r.creds, nil
+
+	return credentialSecret, nil
 }
 
 //IsValid check if the instance is valid. In particular it checks that the CIDRs and the reservedIPs can be parsed correctly
@@ -333,7 +330,7 @@ func (r *EgressIPAMReconciler) manageCleanUpLogic(context context.Context, insta
 }
 
 func isCloudInfrastructure(infrastrucutre *ocpconfigv1.Infrastructure) bool {
-	return infrastrucutre.Spec.PlatformSpec.Type == ocpconfigv1.AWSPlatformType || infrastrucutre.Spec.PlatformSpec.Type == ocpconfigv1.AzurePlatformType || infrastrucutre.Spec.PlatformSpec.Type == ocpconfigv1.GCPPlatformType
+	return infrastrucutre.Status.PlatformStatus.Type == ocpconfigv1.AWSPlatformType || infrastrucutre.Status.PlatformStatus.Type == ocpconfigv1.AzurePlatformType || infrastrucutre.Status.PlatformStatus.Type == ocpconfigv1.GCPPlatformType
 }
 
 func (r *EgressIPAMReconciler) loadReconcileContext(context context.Context, egressIPAM *redhatcopv1alpha1.EgressIPAM) (*reconcilecontext.ReconcileContext, error) {
@@ -351,6 +348,7 @@ func (r *EgressIPAMReconciler) loadReconcileContext(context context.Context, egr
 		}
 		rc.CloudCredentialsSecret = cloudCredentialsSecret
 	}
+
 	CIDRs := []string{}
 	CIDRsByLabel := map[string]string{}
 	reservedIPsByCIDR := map[string][]net.IP{}
