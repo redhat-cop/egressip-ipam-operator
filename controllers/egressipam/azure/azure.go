@@ -356,10 +356,11 @@ func (i *AzureInfra) reconcileAzureAssignedIPs(rc *reconcilecontext.ReconcileCon
 					newIPConfiguration := network.InterfaceIPConfiguration{
 						Name: &name,
 						InterfaceIPConfigurationPropertiesFormat: &network.InterfaceIPConfigurationPropertiesFormat{
-							PrivateIPAddress:          &ip,
-							PrivateIPAllocationMethod: network.Static,
-							Subnet:                    (*networkInterface.IPConfigurations)[0].Subnet,
-							Primary:                   &untrue,
+							PrivateIPAddress:                &ip,
+							PrivateIPAllocationMethod:       network.Static,
+							Subnet:                          (*networkInterface.IPConfigurations)[0].Subnet,
+							Primary:                         &untrue,
+							LoadBalancerBackendAddressPools: (*networkInterface.IPConfigurations)[0].LoadBalancerBackendAddressPools,
 						},
 					}
 					ipConfigurations = append(ipConfigurations, newIPConfiguration)
