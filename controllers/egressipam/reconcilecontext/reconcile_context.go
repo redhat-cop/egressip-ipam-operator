@@ -35,8 +35,7 @@ type ReconcileContext struct {
 
 	Infra Infra `json:"infra,omitempty"`
 
-	SelectedInstances map[string]interface{} `json:"selectedInstances,omitempty"`
-	UsedIPsByCIDR     map[string][]net.IP    `json:"usedIPsByCIDR,omitempty"`
+	UsedIPsByCIDR map[string][]net.IP `json:"usedIPsByCIDR,omitempty"`
 
 	//variable fields
 	FinallyAssignedNamespaces []corev1.Namespace  `json:"finallyAssignedNamespaces,omitempty"`
@@ -45,8 +44,6 @@ type ReconcileContext struct {
 
 //Infra abstracts away infrastructure related concerns
 type Infra interface {
-	//GetSelectedInstances returns a map of nodename and corresponding instance info
-	GetSelectedInstances(rc *ReconcileContext) (map[string]interface{}, error)
 	//GetUsedIPsByCIDR returns a map of reserved IPs by CIDR, this IPs cannot be used for assigning to namespaces
 	GetUsedIPsByCIDR(rc *ReconcileContext) (map[string][]net.IP, error)
 	//ReconcileInstanceSecondaryIPs will make sure that Assigned Egress IPs to instances are correclty reconciled
