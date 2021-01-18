@@ -108,7 +108,6 @@ spec:
 ```
 
 Differently from AWS, in Azure networks can span multiple AZs and that is the way OCP is installed by default.
-Currently support for Azure allows you to deploy EgressIPs on the default vnet: `<infra-id>-vnet`
 
 When a namespace with the opt-in annotation is created, the following happens:
 

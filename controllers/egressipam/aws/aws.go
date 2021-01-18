@@ -28,8 +28,9 @@ type AWSInfra struct {
 	//direct ocp client (not chached)
 	dc client.Client
 	//aws client
-	c   *ec2.EC2
-	log logr.Logger
+	c                 *ec2.EC2
+	log               logr.Logger
+	selectedInstances map[string]*ec2.Instance
 }
 
 func NewAWSInfra(directClient client.Client, rc *reconcilecontext.ReconcileContext) (reconcilecontext.Infra, error) {
@@ -43,21 +44,13 @@ func NewAWSInfra(directClient client.Client, rc *reconcilecontext.ReconcileConte
 		return nil, err
 	}
 	aWSInfra.c = c
-	return aWSInfra, nil
-}
-
-//GetSelectedInstances returns a map of nodename and corresponding instance info
-func (i *AWSInfra) GetSelectedInstances(rc *reconcilecontext.ReconcileContext) (map[string]interface{}, error) {
-	instanceMap, err := i.getAWSInstances(rc.SelectedNodes)
+	selectedInstances, err := aWSInfra.getAWSInstances(rc.SelectedNodes)
 	if err != nil {
-		i.log.Error(err, "unable to retrieve aws istances for selected nodes")
-		return map[string]interface{}{}, err
+		aWSInfra.log.Error(err, "unable to retrieve selected instances")
+		return nil, err
 	}
-	selectedInstances := map[string]interface{}{}
-	for name, AWSInstance := range instanceMap {
-		selectedInstances[name] = AWSInstance
-	}
-	return selectedInstances, nil
+	aWSInfra.selectedInstances = selectedInstances
+	return aWSInfra, nil
 }
 
 //GetUsedIPsByCIDR returns a map of reserved IPs by CIDR, this IPs cannot be used for assigning to namespaces
@@ -148,13 +141,7 @@ func (i *AWSInfra) removeAWSUnusedIPs(rc *reconcilecontext.ReconcileContext) err
 		nodec := node
 		ipsc := ips
 		go func() {
-			instance, ok := rc.SelectedInstances[getAWSIDFromNode(rc.AllNodes[nodec])].(*ec2.Instance)
-			if !ok {
-				err := errors.New("type assertion failed")
-				i.log.Error(err, "*ec2.Instance type assertion failed")
-				results <- err
-				return
-			}
+			instance := i.selectedInstances[getAWSIDFromNode(rc.AllNodes[nodec])]
 			awsAssignedIPs := []string{}
 			for _, ipipas := range instance.NetworkInterfaces[0].PrivateIpAddresses {
 				if !(*ipipas.Primary) {
@@ -201,13 +188,7 @@ func (i *AWSInfra) reconcileAWSAssignedIPs(rc *reconcilecontext.ReconcileContext
 		nodec := node
 		ipsc := assignedIPsToNode
 		go func() {
-			instance, ok := rc.SelectedInstances[getAWSIDFromNode(rc.AllNodes[nodec])].(*ec2.Instance)
-			if !ok {
-				err := errors.New("type assertion failed")
-				i.log.Error(err, "*ec2.Instance type assertion failed")
-				results <- err
-				return
-			}
+			instance := i.selectedInstances[getAWSIDFromNode(rc.AllNodes[nodec])]
 			awsAssignedIPs := []string{}
 			for _, ipipas := range instance.NetworkInterfaces[0].PrivateIpAddresses {
 				if !*ipipas.Primary {
@@ -275,7 +256,7 @@ func (i *AWSInfra) removeAllAWSAssignedIPs(rc *reconcilecontext.ReconcileContext
 	for _, node := range rc.SelectedNodes {
 		nodec := node.DeepCopy()
 		go func() {
-			instance, ok := rc.SelectedInstances[getAWSIDFromNode(*nodec)].(*ec2.Instance)
+			instance, ok := i.selectedInstances[getAWSIDFromNode(*nodec)]
 			if !ok {
 				err := errors.New("type assertion failed")
 				i.log.Error(err, "*ec2.Instance type assertion failed")

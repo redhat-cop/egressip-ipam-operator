@@ -512,7 +512,7 @@ func (r *EgressIPAMReconciler) loadReconcileContext(context context.Context, egr
 		}
 	case ocpconfigv1.AzurePlatformType:
 		{
-			dc, err := r.GetDirectClient()
+			dc, err := r.GetDirectClientWithSchemeBuilders(machinev1beta1.AddToScheme)
 			if err != nil {
 				r.Log.Error(err, "unable to get direct client")
 				return &reconcilecontext.ReconcileContext{}, err
@@ -533,20 +533,6 @@ func (r *EgressIPAMReconciler) loadReconcileContext(context context.Context, egr
 
 	results = make(chan error)
 	defer close(results)
-	// instance
-	go func() {
-		selectedInstances, err := rc.Infra.GetSelectedInstances(rc)
-		if err != nil {
-			r.Log.Error(err, "unable to get selected Instances")
-			results <- err
-			return
-		}
-		rc.SelectedInstances = selectedInstances
-
-		//r.Log.V(1).Info("", "selectedInstances", rc.SelectedInstances)
-		results <- nil
-		return
-	}()
 	// used IPs
 	go func() {
 		usedIPsByCIDR, err := rc.Infra.GetUsedIPsByCIDR(rc)
@@ -563,7 +549,7 @@ func (r *EgressIPAMReconciler) loadReconcileContext(context context.Context, egr
 	}()
 	// collect results
 	result = &multierror.Error{}
-	for range []string{"instances", "usedIPS"} {
+	for range []string{"usedIPS"} {
 		err := <-results
 		multierror.Append(result, err)
 	}
