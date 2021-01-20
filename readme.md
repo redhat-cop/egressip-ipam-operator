@@ -312,7 +312,7 @@ to clean up
 
 ### Azure test
 
-based on the output of the below command, configure your egressIPAM for AWS.
+based on the output of the below command, configure your egressIPAM for Azure.
 
 ```shell
 export network_id=$(oc get infrastructure cluster -o jsonpath='{.status.infrastructureName}')-vnet
