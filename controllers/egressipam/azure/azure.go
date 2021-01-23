@@ -341,8 +341,7 @@ func (i *AzureInfra) removeAllAzureSecondaryIPs(rc *reconcilecontext.ReconcileCo
 	return result.ErrorOrNil()
 }
 
-// assigns secondary IPs to Azure machines
-func (i *AzureInfra) reconcileAzureAssignedIPs(rc *reconcilecontext.ReconcileContext) error {
+func (i *AzureInfra) removeUneededAzureAssignedIPs(rc *reconcilecontext.ReconcileContext) error {
 	results := make(chan error)
 	defer close(results)
 	for node, ips := range rc.FinallyAssignedIPsByNode {
@@ -371,7 +370,6 @@ func (i *AzureInfra) reconcileAzureAssignedIPs(rc *reconcilecontext.ReconcileCon
 				}
 			}
 			toBeRemovedIPs := strset.Difference(strset.New(azureAssignedIPs...), strset.New(ipsc...)).List()
-			toBeAssignedIPs := strset.Difference(strset.New(ipsc...), strset.New(azureAssignedIPs...)).List()
 			//remove unneeded ips
 			ipConfigurations := []network.InterfaceIPConfiguration{}
 			i.log.Info("vm", "instance ", instance.Name, " will be freed from IPs ", toBeRemovedIPs)
@@ -386,17 +384,73 @@ func (i *AzureInfra) reconcileAzureAssignedIPs(rc *reconcilecontext.ReconcileCon
 					ipConfigurations = append(ipConfigurations, ipConfiguration)
 				}
 			}
+			networkInterface.IPConfigurations = &ipConfigurations
+			result, err := i.networkInterface.CreateOrUpdate(rc.Context, rc.Infrastructure.Status.PlatformStatus.Azure.NetworkResourceGroupName, *networkInterface.Name, networkInterface)
+			if err != nil {
+				i.log.Error(err, "unable to update", "network interface", networkInterface.Name)
+				results <- err
+				return
+			}
+			err = result.WaitForCompletionRef(rc.Context, i.networkInterface.Client)
+			if err != nil {
+				i.log.Error(err, "unable to update", "network interface", networkInterface.Name)
+				results <- err
+				return
+			}
 
+			results <- nil
+			return
+		}()
+	}
+	result := &multierror.Error{}
+	for range rc.FinallyAssignedIPsByNode {
+		multierror.Append(result, <-results)
+	}
+
+	return result.ErrorOrNil()
+}
+
+func (i *AzureInfra) addNeededAzureAssignedIPs(rc *reconcilecontext.ReconcileContext) error {
+	results := make(chan error)
+	defer close(results)
+	for node, ips := range rc.FinallyAssignedIPsByNode {
+		nodec := node
+		ipsc := ips
+		go func() {
+			instance := i.selectedInstances[nodec]
+			azureAssignedIPs := []string{}
+			networkInterface := network.Interface{}
+			for _, netif := range *instance.NetworkProfile.NetworkInterfaces {
+				if *netif.Primary {
+					//load network interface
+					var err error
+					networkInterface, err = i.networkInterface.Get(rc.Context, rc.Infrastructure.Status.PlatformStatus.Azure.NetworkResourceGroupName, getNameFromResourceID(*netif.ID), "")
+					if err != nil {
+						i.log.Error(err, "unable to get", "network interface", netif)
+						results <- err
+						return
+					}
+					//exclude first IP, add secondary IPs
+					for _, ipConfiguration := range *networkInterface.IPConfigurations {
+						if !*ipConfiguration.Primary {
+							azureAssignedIPs = append(azureAssignedIPs, *ipConfiguration.PrivateIPAddress)
+						}
+					}
+				}
+			}
+			ipConfigurations := *networkInterface.IPConfigurations
+			toBeAssignedIPs := strset.Difference(strset.New(ipsc...), strset.New(azureAssignedIPs...)).List()
 			//add needed IPs
 			if len(toBeAssignedIPs) > 0 {
-				i.log.Info("vm", "instance ", instance.Name, " will be freed from IPs ", toBeRemovedIPs)
+				i.log.Info("vm", "instance ", instance.Name, " will be added IPs ", toBeAssignedIPs)
 				for _, ip := range toBeAssignedIPs {
 					name := "EgressIP" + ip
+					ipc := ip
 					untrue := false
 					newIPConfiguration := network.InterfaceIPConfiguration{
 						Name: &name,
 						InterfaceIPConfigurationPropertiesFormat: &network.InterfaceIPConfigurationPropertiesFormat{
-							PrivateIPAddress:                &ip,
+							PrivateIPAddress:                &ipc,
 							PrivateIPAllocationMethod:       network.Static,
 							Subnet:                          (*networkInterface.IPConfigurations)[0].Subnet,
 							Primary:                         &untrue,
@@ -430,6 +484,21 @@ func (i *AzureInfra) reconcileAzureAssignedIPs(rc *reconcilecontext.ReconcileCon
 	}
 
 	return result.ErrorOrNil()
+}
+
+// assigns secondary IPs to Azure machines
+func (i *AzureInfra) reconcileAzureAssignedIPs(rc *reconcilecontext.ReconcileContext) error {
+	err := i.removeUneededAzureAssignedIPs(rc)
+	if err != nil {
+		i.log.Error(err, "unable to remove uneeded IPs")
+		return err
+	}
+	err = i.addNeededAzureAssignedIPs(rc)
+	if err != nil {
+		i.log.Error(err, "unable to add needed IPs")
+		return err
+	}
+	return nil
 }
 
 func GetAzureCredentialsRequestProviderSpec() *cloudcredentialv1.AzureProviderSpec {
