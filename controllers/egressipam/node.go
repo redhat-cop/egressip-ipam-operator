@@ -121,9 +121,21 @@ func (r *EgressIPAMReconciler) getSelectedNodes(rc *reconcilecontext.ReconcileCo
 func (r *EgressIPAMReconciler) getAssignedIPsByNode(rc *reconcilecontext.ReconcileContext) map[string][]string {
 	assignedIPsByNode := map[string][]string{}
 	for hostSubnetName, hostsubnet := range rc.SelectedHostSubnets {
-		assignedIPsByNode[hostSubnetName] = GetHostHostSubnetEgressIPsAsStrings(hostsubnet.EgressIPs)
+		if node, ok := rc.AllNodes[hostSubnetName]; ok && isCondition(node.Status.Conditions, corev1.NodeReady, corev1.ConditionTrue) {
+			assignedIPsByNode[hostSubnetName] = GetHostHostSubnetEgressIPsAsStrings(hostsubnet.EgressIPs)
+		}
+
 	}
 	return assignedIPsByNode
+}
+
+func isCondition(conditions []corev1.NodeCondition, conditionType corev1.NodeConditionType, conditionStatus corev1.ConditionStatus) bool {
+	for _, condition := range conditions {
+		if conditionType == condition.Type && conditionStatus == condition.Status {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *EgressIPAMReconciler) getNodesIPsByCIDR(rc *reconcilecontext.ReconcileContext) (map[string][]net.IP, error) {

@@ -269,7 +269,9 @@ func (r *EgressIPAMReconciler) assignIPsToNodes(rc *reconcilecontext.ReconcileCo
 	for cidr := range nodesByCIDR {
 		nodesByNumberOfAssignedIPsByCIDR[cidr] = map[int][]string{}
 		for _, node := range nodesByCIDR[cidr] {
-			nodesByNumberOfAssignedIPsByCIDR[cidr][len(newAssignedIPsByNode[node])] = append(nodesByNumberOfAssignedIPsByCIDR[cidr][len(newAssignedIPsByNode[node])], node)
+			if _, ok := rc.AllNodes[node]; ok && isCondition(rc.AllNodes[node].Status.Conditions, corev1.NodeReady, corev1.ConditionTrue) {
+				nodesByNumberOfAssignedIPsByCIDR[cidr][len(newAssignedIPsByNode[node])] = append(nodesByNumberOfAssignedIPsByCIDR[cidr][len(newAssignedIPsByNode[node])], node)
+			}
 		}
 	}
 
@@ -295,6 +297,14 @@ func (r *EgressIPAMReconciler) assignIPsToNodes(rc *reconcilecontext.ReconcileCo
 			nodesByNumberOfAssignedIPsByCIDR[cidr][minIPsPerNode] = nodesByNumberOfAssignedIPsByCIDR[cidr][minIPsPerNode][1:]
 			// add the node to the minIPsPerNode+1 map
 			nodesByNumberOfAssignedIPsByCIDR[cidr][minIPsPerNode+1] = append(nodesByNumberOfAssignedIPsByCIDR[cidr][minIPsPerNode+1], node)
+		}
+	}
+
+	//at this point we need to re-add the nodes that were removed because not ready
+
+	for nodeName, node := range rc.SelectedNodes {
+		if !isCondition(node.Status.Conditions, corev1.NodeReady, corev1.ConditionTrue) {
+			newAssignedIPsByNode[nodeName] = []string{}
 		}
 	}
 

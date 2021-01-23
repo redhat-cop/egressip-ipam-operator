@@ -51,8 +51,15 @@ It also also a responsibility of the progress picking the IPs to ensure that tho
 
 The following assumptions apply when using this operator:
 
-1. If multiple EgressIPAMs are defined, their selected nodes MUST NOT overlap.
-2. When using a cloud provider the topology label MUST be `failure-domain.beta.kubernetes.io/zone`.
+1. If multiple EgressIPAMs are defined, their selected nodes MUST NOT overlap. The behavior of the operator is undefined if this constraint is not met.
+
+## Considerations on High-Availability
+
+This operator has the ability to detect failed nodes and move the egressIPs these nodes were carring to other nodes. However this mechanism is relatively slow (order of magnitudes is minutes), so it should be considered a self-healing mechanism.
+
+Shuffling EgressIPs around is an involved process because cloud providers are hardly designed for this use case especially when VM instances are carrying several EgressIPs. So we encourage users to test this process in their specific deployment as it will be certainly triggered when doing an OpenShift upgrade.
+
+If you are looking for High Availability, i.e. the ability to continue to operate when a the node carrying the egressIP goes down, you have to define multiple CIDRs in the CR. This way each namespace will get multiple EgressIPs enabling OpenShift to use the secondary EgressIP when the first EgressIP is not available.
 
 ## Support for AWS
 
@@ -84,6 +91,8 @@ When a namespace with the opt-in annotation is created, the following happens:
 3. one node per zone is selected to carry the egressIP.
 4. the relative aws machines are assigned the additional IP on the main interface (support for secondary interfaces in not available).
 5. the relative `hostsubnets` are updated to reflect the assigned IP, the `egressIP` field is updated.
+
+When running on AWS it is highly recommend the topology label be `topology.kubernetes.io/zone` or the deprecated `failure-domain.beta.kubernetes.io/zone`.
 
 ## Support for Azure
 

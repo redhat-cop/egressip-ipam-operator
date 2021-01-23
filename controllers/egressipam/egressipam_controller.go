@@ -626,11 +626,21 @@ func (r *EgressIPAMReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return err
 	}
 
-	IsCreatedOrDeleted := predicate.Funcs{
+	IsCreatedOrDeletedOrReadinessChanged := predicate.Funcs{
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			old := e.ObjectOld.GetAnnotations()
 			new := e.ObjectNew.GetAnnotations()
-			return !reflect.DeepEqual(old, new)
+			oldNode, ok := e.ObjectOld.(*corev1.Node)
+			if !ok {
+				return false
+			}
+			newNode, ok := e.ObjectNew.(*corev1.Node)
+			if !ok {
+				return false
+			}
+			oldReadiness := isCondition(oldNode.Status.Conditions, corev1.NodeReady, corev1.ConditionTrue)
+			newReadiness := isCondition(newNode.Status.Conditions, corev1.NodeReady, corev1.ConditionTrue)
+			return !reflect.DeepEqual(old, new) || oldReadiness != newReadiness
 		},
 		CreateFunc: func(e event.CreateEvent) bool {
 			return true
@@ -727,7 +737,7 @@ func (r *EgressIPAMReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		}}, &enqueForSelectingEgressIPAMNode{
 			r:   r,
 			log: r.Log.WithName("enqueForSelectingEgressIPAMNode"),
-		}, builder.WithPredicates(&IsCreatedOrDeleted)).
+		}, builder.WithPredicates(&IsCreatedOrDeletedOrReadinessChanged)).
 		Watches(&source.Kind{Type: &ocpnetv1.HostSubnet{
 			TypeMeta: metav1.TypeMeta{
 				Kind: "HostSubnet",
