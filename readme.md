@@ -92,7 +92,7 @@ When a namespace with the opt-in annotation is created, the following happens:
 4. the relative aws machines are assigned the additional IP on the main interface (support for secondary interfaces in not available).
 5. the relative `hostsubnets` are updated to reflect the assigned IP, the `egressIP` field is updated.
 
-When running on AWS it is highly recommend the topology label be `failure-domain.beta.kubernetes.io/zone`.
+When running on AWS it is highly recommend the topology label be `topology.kubernetes.io/zone` or the deprecated `failure-domain.beta.kubernetes.io/zone`.
 
 ## Support for Azure
 
