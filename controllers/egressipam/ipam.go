@@ -300,6 +300,13 @@ func (r *EgressIPAMReconciler) assignIPsToNodes(rc *reconcilecontext.ReconcileCo
 		}
 	}
 
+	//we could be in a situation where only some nodes got some IPs, we need to make sure that all of the nodes are in the final map, possibbly with zero IPs.
+	for _, nodeByNumberOfIPs := range nodesByNumberOfAssignedIPsByCIDR {
+		for _, node := range nodeByNumberOfIPs[0] {
+			newAssignedIPsByNode[node] = []string{}
+		}
+	}
+
 	//at this point we need to re-add the nodes that were removed because not ready
 
 	for nodeName, node := range rc.SelectedNodes {
