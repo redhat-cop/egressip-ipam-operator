@@ -216,6 +216,9 @@ func (i *AzureInfra) getAzureUsedIPsByCIDR(rc *reconcilecontext.ReconcileContext
 		//get subnets
 		for _, subnet := range *result.Subnets {
 			for _, ipConfiguration := range *subnet.IPConfigurations {
+				if ipConfiguration.PrivateIPAddress == nil {
+					continue
+				}
 				IP := net.ParseIP(*ipConfiguration.PrivateIPAddress)
 				if IP == nil {
 					i.log.Error(err, "unable to parse ", "IP", *ipConfiguration.PrivateIPAddress)
@@ -341,7 +344,7 @@ func (i *AzureInfra) removeAllAzureSecondaryIPs(rc *reconcilecontext.ReconcileCo
 	return result.ErrorOrNil()
 }
 
-func (i *AzureInfra) removeUneededAzureAssignedIPs(rc *reconcilecontext.ReconcileContext) error {
+func (i *AzureInfra) removeUnNeededAzureAssignedIPs(rc *reconcilecontext.ReconcileContext) error {
 	results := make(chan error)
 	defer close(results)
 	for node, ips := range rc.FinallyAssignedIPsByNode {
@@ -363,7 +366,7 @@ func (i *AzureInfra) removeUneededAzureAssignedIPs(rc *reconcilecontext.Reconcil
 					}
 					//exclude first IP, add secondary IPs
 					for _, ipConfiguration := range *networkInterface.IPConfigurations {
-						if !*ipConfiguration.Primary {
+						if !*ipConfiguration.Primary && ipConfiguration.PrivateIPAddress != nil {
 							azureAssignedIPs = append(azureAssignedIPs, *ipConfiguration.PrivateIPAddress)
 						}
 					}
@@ -376,7 +379,7 @@ func (i *AzureInfra) removeUneededAzureAssignedIPs(rc *reconcilecontext.Reconcil
 			for _, ipConfiguration := range *networkInterface.IPConfigurations {
 				found := false
 				for i := range toBeRemovedIPs {
-					if toBeRemovedIPs[i] == *ipConfiguration.PrivateIPAddress {
+					if ipConfiguration.PrivateIPAddress != nil && toBeRemovedIPs[i] == *ipConfiguration.PrivateIPAddress {
 						found = true
 					}
 				}
@@ -432,7 +435,7 @@ func (i *AzureInfra) addNeededAzureAssignedIPs(rc *reconcilecontext.ReconcileCon
 					}
 					//exclude first IP, add secondary IPs
 					for _, ipConfiguration := range *networkInterface.IPConfigurations {
-						if !*ipConfiguration.Primary {
+						if !*ipConfiguration.Primary && ipConfiguration.PrivateIPAddress != nil {
 							azureAssignedIPs = append(azureAssignedIPs, *ipConfiguration.PrivateIPAddress)
 						}
 					}
@@ -488,7 +491,7 @@ func (i *AzureInfra) addNeededAzureAssignedIPs(rc *reconcilecontext.ReconcileCon
 
 // assigns secondary IPs to Azure machines
 func (i *AzureInfra) reconcileAzureAssignedIPs(rc *reconcilecontext.ReconcileContext) error {
-	err := i.removeUneededAzureAssignedIPs(rc)
+	err := i.removeUnNeededAzureAssignedIPs(rc)
 	if err != nil {
 		i.log.Error(err, "unable to remove uneeded IPs")
 		return err
