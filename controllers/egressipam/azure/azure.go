@@ -305,7 +305,7 @@ func (i *AzureInfra) removeAllAzureSecondaryIPs(rc *reconcilecontext.ReconcileCo
 				if *netif.Primary {
 					//load network interface
 					var err error
-					networkInterface, err = i.networkInterface.Get(rc.Context, rc.Infrastructure.Status.PlatformStatus.Azure.NetworkResourceGroupName, getNameFromResourceID(*netif.ID), "")
+					networkInterface, err = i.networkInterface.Get(rc.Context, getResourceGroupFromResourceID(*netif.ID), getNameFromResourceID(*netif.ID), "")
 					if err != nil {
 						i.log.Error(err, "unable to get", "network interface", netif)
 						results <- err
@@ -358,7 +358,7 @@ func (i *AzureInfra) removeUnNeededAzureAssignedIPs(rc *reconcilecontext.Reconci
 				if *netif.Primary {
 					//load network interface
 					var err error
-					networkInterface, err = i.networkInterface.Get(rc.Context, rc.Infrastructure.Status.PlatformStatus.Azure.NetworkResourceGroupName, getNameFromResourceID(*netif.ID), "")
+					networkInterface, err = i.networkInterface.Get(rc.Context, getResourceGroupFromResourceID(*netif.ID), getNameFromResourceID(*netif.ID), "")
 					if err != nil {
 						i.log.Error(err, "unable to get", "network interface", netif)
 						results <- err
@@ -427,7 +427,7 @@ func (i *AzureInfra) addNeededAzureAssignedIPs(rc *reconcilecontext.ReconcileCon
 				if *netif.Primary {
 					//load network interface
 					var err error
-					networkInterface, err = i.networkInterface.Get(rc.Context, rc.Infrastructure.Status.PlatformStatus.Azure.NetworkResourceGroupName, getNameFromResourceID(*netif.ID), "")
+					networkInterface, err = i.networkInterface.Get(rc.Context, getResourceGroupFromResourceID(*netif.ID), getNameFromResourceID(*netif.ID), "")
 					if err != nil {
 						i.log.Error(err, "unable to get", "network interface", netif)
 						results <- err
@@ -526,6 +526,10 @@ func GetAzureCredentialsRequestProviderSpec() *cloudcredentialv1.AzureProviderSp
 
 func getNameFromResourceID(id string) string {
 	return id[strings.LastIndex(id, "/"):]
+}
+
+func getResourceGroupFromResourceID(id string) string {
+	return strings.Split(id, "/")[3]
 }
 
 // AzureMachineProviderSpec is the type that will be embedded in a Machine.Spec.ProviderSpec field
