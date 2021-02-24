@@ -74,6 +74,7 @@ type EgressIPAMReconciler struct {
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 // +kubebuilder:rbac:groups="cloudcredential.openshift.io",resources=credentialsrequests,verbs=get;list;watch;create;update
 // +kubebuilder:rbac:groups="machine.openshift.io",resources=machinesets,verbs=get;list;watch
+// +kubebuilder:rbac:groups="machine.openshift.io",resources=machines,verbs=get;list;watch
 // +kubebuilder:rbac:groups="config.openshift.io",resources=infrastructures,verbs=get;list;watch
 // +kubebuilder:rbac:groups="network.openshift.io",resources=hostsubnets,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups="network.openshift.io",resources=netnamespaces,verbs=get;list;watch;update;patch
