@@ -320,7 +320,7 @@ func (i *AzureInfra) removeAllAzureSecondaryIPs(rc *reconcilecontext.ReconcileCo
 				}
 			}
 			networkInterface.IPConfigurations = &ipConfigurations
-			result, err := i.networkInterface.CreateOrUpdate(rc.Context, rc.Infrastructure.Status.PlatformStatus.Azure.NetworkResourceGroupName, *networkInterface.Name, networkInterface)
+			result, err := i.networkInterface.CreateOrUpdate(rc.Context, getResourceGroupFromResourceID(*networkInterface.ID), *networkInterface.Name, networkInterface)
 			if err != nil {
 				i.log.Error(err, "unable to update", "network interface", networkInterface.Name)
 				results <- err
@@ -388,7 +388,7 @@ func (i *AzureInfra) removeUnNeededAzureAssignedIPs(rc *reconcilecontext.Reconci
 				}
 			}
 			networkInterface.IPConfigurations = &ipConfigurations
-			result, err := i.networkInterface.CreateOrUpdate(rc.Context, rc.Infrastructure.Status.PlatformStatus.Azure.NetworkResourceGroupName, *networkInterface.Name, networkInterface)
+			result, err := i.networkInterface.CreateOrUpdate(rc.Context, getResourceGroupFromResourceID(*networkInterface.ID), *networkInterface.Name, networkInterface)
 			if err != nil {
 				i.log.Error(err, "unable to update", "network interface", networkInterface.Name)
 				results <- err
@@ -464,7 +464,7 @@ func (i *AzureInfra) addNeededAzureAssignedIPs(rc *reconcilecontext.ReconcileCon
 				}
 			}
 			networkInterface.IPConfigurations = &ipConfigurations
-			result, err := i.networkInterface.CreateOrUpdate(rc.Context, rc.Infrastructure.Status.PlatformStatus.Azure.NetworkResourceGroupName, *networkInterface.Name, networkInterface)
+			result, err := i.networkInterface.CreateOrUpdate(rc.Context, getResourceGroupFromResourceID(*networkInterface.ID), *networkInterface.Name, networkInterface)
 			if err != nil {
 				i.log.Error(err, "unable to update", "network interface", networkInterface.Name)
 				results <- err
