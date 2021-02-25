@@ -529,7 +529,7 @@ func getNameFromResourceID(id string) string {
 }
 
 func getResourceGroupFromResourceID(id string) string {
-	return strings.Split(id, "/")[3]
+	return strings.Split(id, "/")[4]
 }
 
 // AzureMachineProviderSpec is the type that will be embedded in a Machine.Spec.ProviderSpec field
