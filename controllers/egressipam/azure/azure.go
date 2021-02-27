@@ -216,6 +216,9 @@ func (i *AzureInfra) getAzureUsedIPsByCIDR(rc *reconcilecontext.ReconcileContext
 		//get subnets
 		for _, subnet := range *result.Subnets {
 			for _, ipConfiguration := range *subnet.IPConfigurations {
+				if ipConfiguration.PrivateIPAddress == nil {
+					continue
+				}
 				IP := net.ParseIP(*ipConfiguration.PrivateIPAddress)
 				if IP == nil {
 					i.log.Error(err, "unable to parse ", "IP", *ipConfiguration.PrivateIPAddress)
@@ -302,7 +305,7 @@ func (i *AzureInfra) removeAllAzureSecondaryIPs(rc *reconcilecontext.ReconcileCo
 				if *netif.Primary {
 					//load network interface
 					var err error
-					networkInterface, err = i.networkInterface.Get(rc.Context, rc.Infrastructure.Status.PlatformStatus.Azure.NetworkResourceGroupName, getNameFromResourceID(*netif.ID), "")
+					networkInterface, err = i.networkInterface.Get(rc.Context, getResourceGroupFromResourceID(*netif.ID), getNameFromResourceID(*netif.ID), "")
 					if err != nil {
 						i.log.Error(err, "unable to get", "network interface", netif)
 						results <- err
@@ -317,7 +320,7 @@ func (i *AzureInfra) removeAllAzureSecondaryIPs(rc *reconcilecontext.ReconcileCo
 				}
 			}
 			networkInterface.IPConfigurations = &ipConfigurations
-			result, err := i.networkInterface.CreateOrUpdate(rc.Context, rc.Infrastructure.Status.PlatformStatus.Azure.NetworkResourceGroupName, *networkInterface.Name, networkInterface)
+			result, err := i.networkInterface.CreateOrUpdate(rc.Context, getResourceGroupFromResourceID(*networkInterface.ID), *networkInterface.Name, networkInterface)
 			if err != nil {
 				i.log.Error(err, "unable to update", "network interface", networkInterface.Name)
 				results <- err
@@ -341,7 +344,7 @@ func (i *AzureInfra) removeAllAzureSecondaryIPs(rc *reconcilecontext.ReconcileCo
 	return result.ErrorOrNil()
 }
 
-func (i *AzureInfra) removeUneededAzureAssignedIPs(rc *reconcilecontext.ReconcileContext) error {
+func (i *AzureInfra) removeUnNeededAzureAssignedIPs(rc *reconcilecontext.ReconcileContext) error {
 	results := make(chan error)
 	defer close(results)
 	for node, ips := range rc.FinallyAssignedIPsByNode {
@@ -355,7 +358,7 @@ func (i *AzureInfra) removeUneededAzureAssignedIPs(rc *reconcilecontext.Reconcil
 				if *netif.Primary {
 					//load network interface
 					var err error
-					networkInterface, err = i.networkInterface.Get(rc.Context, rc.Infrastructure.Status.PlatformStatus.Azure.NetworkResourceGroupName, getNameFromResourceID(*netif.ID), "")
+					networkInterface, err = i.networkInterface.Get(rc.Context, getResourceGroupFromResourceID(*netif.ID), getNameFromResourceID(*netif.ID), "")
 					if err != nil {
 						i.log.Error(err, "unable to get", "network interface", netif)
 						results <- err
@@ -363,7 +366,7 @@ func (i *AzureInfra) removeUneededAzureAssignedIPs(rc *reconcilecontext.Reconcil
 					}
 					//exclude first IP, add secondary IPs
 					for _, ipConfiguration := range *networkInterface.IPConfigurations {
-						if !*ipConfiguration.Primary {
+						if !*ipConfiguration.Primary && ipConfiguration.PrivateIPAddress != nil {
 							azureAssignedIPs = append(azureAssignedIPs, *ipConfiguration.PrivateIPAddress)
 						}
 					}
@@ -376,7 +379,7 @@ func (i *AzureInfra) removeUneededAzureAssignedIPs(rc *reconcilecontext.Reconcil
 			for _, ipConfiguration := range *networkInterface.IPConfigurations {
 				found := false
 				for i := range toBeRemovedIPs {
-					if toBeRemovedIPs[i] == *ipConfiguration.PrivateIPAddress {
+					if ipConfiguration.PrivateIPAddress != nil && toBeRemovedIPs[i] == *ipConfiguration.PrivateIPAddress {
 						found = true
 					}
 				}
@@ -385,7 +388,7 @@ func (i *AzureInfra) removeUneededAzureAssignedIPs(rc *reconcilecontext.Reconcil
 				}
 			}
 			networkInterface.IPConfigurations = &ipConfigurations
-			result, err := i.networkInterface.CreateOrUpdate(rc.Context, rc.Infrastructure.Status.PlatformStatus.Azure.NetworkResourceGroupName, *networkInterface.Name, networkInterface)
+			result, err := i.networkInterface.CreateOrUpdate(rc.Context, getResourceGroupFromResourceID(*networkInterface.ID), *networkInterface.Name, networkInterface)
 			if err != nil {
 				i.log.Error(err, "unable to update", "network interface", networkInterface.Name)
 				results <- err
@@ -424,7 +427,7 @@ func (i *AzureInfra) addNeededAzureAssignedIPs(rc *reconcilecontext.ReconcileCon
 				if *netif.Primary {
 					//load network interface
 					var err error
-					networkInterface, err = i.networkInterface.Get(rc.Context, rc.Infrastructure.Status.PlatformStatus.Azure.NetworkResourceGroupName, getNameFromResourceID(*netif.ID), "")
+					networkInterface, err = i.networkInterface.Get(rc.Context, getResourceGroupFromResourceID(*netif.ID), getNameFromResourceID(*netif.ID), "")
 					if err != nil {
 						i.log.Error(err, "unable to get", "network interface", netif)
 						results <- err
@@ -432,7 +435,7 @@ func (i *AzureInfra) addNeededAzureAssignedIPs(rc *reconcilecontext.ReconcileCon
 					}
 					//exclude first IP, add secondary IPs
 					for _, ipConfiguration := range *networkInterface.IPConfigurations {
-						if !*ipConfiguration.Primary {
+						if !*ipConfiguration.Primary && ipConfiguration.PrivateIPAddress != nil {
 							azureAssignedIPs = append(azureAssignedIPs, *ipConfiguration.PrivateIPAddress)
 						}
 					}
@@ -461,7 +464,7 @@ func (i *AzureInfra) addNeededAzureAssignedIPs(rc *reconcilecontext.ReconcileCon
 				}
 			}
 			networkInterface.IPConfigurations = &ipConfigurations
-			result, err := i.networkInterface.CreateOrUpdate(rc.Context, rc.Infrastructure.Status.PlatformStatus.Azure.NetworkResourceGroupName, *networkInterface.Name, networkInterface)
+			result, err := i.networkInterface.CreateOrUpdate(rc.Context, getResourceGroupFromResourceID(*networkInterface.ID), *networkInterface.Name, networkInterface)
 			if err != nil {
 				i.log.Error(err, "unable to update", "network interface", networkInterface.Name)
 				results <- err
@@ -488,7 +491,7 @@ func (i *AzureInfra) addNeededAzureAssignedIPs(rc *reconcilecontext.ReconcileCon
 
 // assigns secondary IPs to Azure machines
 func (i *AzureInfra) reconcileAzureAssignedIPs(rc *reconcilecontext.ReconcileContext) error {
-	err := i.removeUneededAzureAssignedIPs(rc)
+	err := i.removeUnNeededAzureAssignedIPs(rc)
 	if err != nil {
 		i.log.Error(err, "unable to remove uneeded IPs")
 		return err
@@ -523,6 +526,10 @@ func GetAzureCredentialsRequestProviderSpec() *cloudcredentialv1.AzureProviderSp
 
 func getNameFromResourceID(id string) string {
 	return id[strings.LastIndex(id, "/"):]
+}
+
+func getResourceGroupFromResourceID(id string) string {
+	return strings.Split(id, "/")[4]
 }
 
 // AzureMachineProviderSpec is the type that will be embedded in a Machine.Spec.ProviderSpec field

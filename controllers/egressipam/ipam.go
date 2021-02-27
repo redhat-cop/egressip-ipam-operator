@@ -285,7 +285,7 @@ func (r *EgressIPAMReconciler) assignIPsToNodes(rc *reconcilecontext.ReconcileCo
 			minIPsPerNode := getMinKey(nodesByNumberOfAssignedIPsByCIDR[cidr])
 			if minIPsPerNode == -1 {
 				err := errors.New("Unable to find nodes for CIDR" + cidr)
-				r.Log.Error(err, "", cidr, "nodes", nodesByNumberOfAssignedIPsByCIDR[cidr])
+				r.Log.Error(err, "", "cidr", cidr, "nodes", nodesByNumberOfAssignedIPsByCIDR[cidr])
 				return map[string][]string{}, err
 			}
 			r.Log.V(1).Info("", "minIPsPerNode: ", minIPsPerNode, "for cidr", cidr)
