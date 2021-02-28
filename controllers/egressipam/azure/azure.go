@@ -214,20 +214,30 @@ func (i *AzureInfra) getAzureUsedIPsByCIDR(rc *reconcilecontext.ReconcileContext
 			return map[string][]net.IP{}, err
 		}
 		//get subnets
-		for _, subnet := range *result.Subnets {
-			for _, ipConfiguration := range *subnet.IPConfigurations {
-				if ipConfiguration.PrivateIPAddress == nil {
-					continue
-				}
-				IP := net.ParseIP(*ipConfiguration.PrivateIPAddress)
-				if IP == nil {
-					i.log.Error(err, "unable to parse ", "IP", *ipConfiguration.PrivateIPAddress)
-					return map[string][]net.IP{}, err
-				}
-				if CIDR.Contains(IP) {
-					usedIPsByCIDR[cidr] = append(usedIPsByCIDR[cidr], IP)
+		if result.Subnets != nil {
+			for _, subnet := range *result.Subnets {
+
+				if subnet.IPConfigurations != nil {
+
+					for _, ipConfiguration := range *subnet.IPConfigurations {
+						if ipConfiguration.PrivateIPAddress == nil {
+							continue
+						}
+						IP := net.ParseIP(*ipConfiguration.PrivateIPAddress)
+						if IP == nil {
+							i.log.Error(err, "unable to parse ", "IP", *ipConfiguration.PrivateIPAddress)
+							return map[string][]net.IP{}, err
+						}
+						if CIDR.Contains(IP) {
+							usedIPsByCIDR[cidr] = append(usedIPsByCIDR[cidr], IP)
+						}
+					}
+				} else {
+					i.log.Info("No IPConfigurations found in Subnet", "subnet", *subnet.Name, "vnet", vnet)
 				}
 			}
+		} else {
+			i.log.Info("No Subnets Found in vnet", "vnet", vnet)
 		}
 	}
 	return usedIPsByCIDR, nil
