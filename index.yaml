@@ -2,8 +2,25 @@ apiVersion: v1
 entries:
   egressip-ipam-operator:
   - apiVersion: v1
+    appVersion: v1.0.2
+    created: "2021-03-01T13:00:15.45947396Z"
+    description: Helm chart that deploys egressip-ipam-operator
+    digest: 977f40fceab8d4ed8f6dbd561202c60480b0a80f9b89c01607b60fd358826881
+    keywords:
+    - volume
+    - storage
+    - csi
+    - expansion
+    - monitoring
+    name: egressip-ipam-operator
+    sources:
+    - https://github.com/redhat-cop/egressip-ipam-operator
+    urls:
+    - https://redhat-cop.github.io/egressip-ipam-operator/egressip-ipam-operator/egressip-ipam-operator-v1.0.2.tgz
+    version: v1.0.2
+  - apiVersion: v1
     appVersion: v1.0.1
-    created: "2021-02-27T14:44:51.898485497Z"
+    created: "2021-03-01T13:00:15.459153656Z"
     description: Helm chart that deploys egressip-ipam-operator
     digest: 23e1154f08b4dc03d553e7bd4f58bec88f79f4330e65e8985594d68f83764b1d
     keywords:
@@ -20,7 +37,7 @@ entries:
     version: v1.0.1
   - apiVersion: v1
     appVersion: v1.0.0
-    created: "2021-02-27T14:44:51.898067084Z"
+    created: "2021-03-01T13:00:15.45878445Z"
     description: Helm chart that deploys egressip-ipam-operator
     digest: c0ce1d12dcca1875789a6c31b7e6e45e9336230798f9d52f1b6ef58bfae66112
     keywords:
@@ -37,7 +54,7 @@ entries:
     version: v1.0.0
   - apiVersion: v1
     appVersion: v0.1.2
-    created: "2021-02-27T14:44:51.897638571Z"
+    created: "2021-03-01T13:00:15.458427745Z"
     description: Helm chart that deploys egressip-ipam-operator
     digest: d686d56a0a52cb445b0ce21c93f0dd91de3886ff2d8132aa0c70d09dc078d5f1
     keywords:
@@ -52,7 +69,7 @@ entries:
     version: v0.1.2
   - apiVersion: v1
     appVersion: v0.1.1
-    created: "2021-02-27T14:44:51.89728796Z"
+    created: "2021-03-01T13:00:15.458149341Z"
     description: Helm chart that deploys egressip-ipam-operator
     digest: f99fd100fd5aa65d2ca650d4466634f05866ab9077b87b9da20c1bbe7dcaa2e6
     keywords:
@@ -67,7 +84,7 @@ entries:
     version: v0.1.1
   - apiVersion: v1
     appVersion: v0.1.0
-    created: "2021-02-27T14:44:51.896928649Z"
+    created: "2021-03-01T13:00:15.457853236Z"
     description: Helm chart that deploys egressip-ipam-operator
     digest: 21dcd57e1c3062b80249bd933d118946e82d5d24cf3810dc4e3d39530af49085
     keywords:
@@ -80,4 +97,4 @@ entries:
     urls:
     - https://redhat-cop.github.io/egressip-ipam-operator/egressip-ipam-operator/egressip-ipam-operator-v0.1.0.tgz
     version: v0.1.0
-generated: "2021-02-27T14:44:51.896334331Z"
+generated: "2021-03-01T13:00:15.45741803Z"
