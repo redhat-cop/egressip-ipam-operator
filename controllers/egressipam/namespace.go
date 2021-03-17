@@ -50,7 +50,12 @@ func (e *enqueForSelectedEgressIPAMNamespace) Update(evt event.UpdateEvent, q wo
 
 // Delete implements EventHandler
 func (e *enqueForSelectedEgressIPAMNamespace) Delete(evt event.DeleteEvent, q workqueue.RateLimitingInterface) {
-	return
+	egressIPAMNAme, ok := evt.Object.GetAnnotations()[NamespaceAnnotation]
+	if ok {
+		q.Add(reconcile.Request{NamespacedName: types.NamespacedName{
+			Name: egressIPAMNAme,
+		}})
+	}
 }
 
 // Generic implements EventHandler
