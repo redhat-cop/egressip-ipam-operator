@@ -50,14 +50,3 @@ Selector labels
 app.kubernetes.io/name: {{ include "egressip-ipam-operator.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
-
-{{/*
-Create the name of the service account to use
-*/}}
-{{- define "egressip-ipam-operator.serviceAccountName" -}}
-{{- if .Values.serviceAccount.create }}
-{{- default (include "egressip-ipam-operator.fullname" .) .Values.serviceAccount.name }}
-{{- else }}
-{{- default "default" .Values.serviceAccount.name }}
-{{- end }}
-{{- end }}
