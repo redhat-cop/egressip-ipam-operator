@@ -249,7 +249,7 @@ helm upgrade egressip-ipam-operator egressip-ipam-operator/egressip-ipam-operato
 make install
 oc new-project egressip-ipam-operator-local
 kustomize build ./config/local-development | oc apply -f - -n egressip-ipam-operator-local
-export token=$(oc serviceaccounts get-token 'default' -n egressip-ipam-operator-local)
+export token=$(oc serviceaccounts get-token 'egressip-ipam-operator-controller-manager' -n egressip-ipam-operator-local)
 export NAMESPACE=egressip-ipam-operator-local
 oc login --token ${token}
 make run ENABLE_WEBHOOKS=false
@@ -261,7 +261,7 @@ Define an image and tag. For example...
 
 ```shell
 export imageRepository="quay.io/redhat-cop/egressip-ipam-operator"
-export imageTag="v1.0.4"
+export imageTag="$(git describe --tags --abbrev=0)" # grabs the most recent git tag, which should match the image tag
 ```
 
 Deploy chart...

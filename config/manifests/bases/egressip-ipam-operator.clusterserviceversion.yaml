@@ -11,6 +11,7 @@ metadata:
     description: This operator provides automation around manageing egressIPs.
     repository: https://github.com/redhat-cop/egressip-ipam-operator
     support: Best Effort
+    operatorframework.io/suggested-namespace: egressip-ipam-operator
   name: egressip-ipam-operator.v0.0.0
   namespace: placeholder
 spec:
