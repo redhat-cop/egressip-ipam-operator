@@ -18,6 +18,7 @@ spec:
       labels:
         {{- include "egressip-ipam-operator.selectorLabels" . | nindent 8 }}
     spec:
+      serviceAccountName: egressip-ipam-operator-controller-manager
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
