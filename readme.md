@@ -241,6 +241,14 @@ helm repo update
 helm upgrade egressip-ipam-operator egressip-ipam-operator/egressip-ipam-operator
 ```
 
+## Metrics
+
+Prometheus compatible metrics are exposed by the Operator and can be integrated into OpenShift's default cluster monitoring. To enable OpenShift cluster monitoring, label the namespace the operator is deployed in with the label `openshift.io/cluster-monitoring="true"`.
+
+```shell
+oc label namespace <namespace> openshift.io/cluster-monitoring="true"
+```
+
 ## Development
 
 ## Running the operator locally
@@ -249,7 +257,7 @@ helm upgrade egressip-ipam-operator egressip-ipam-operator/egressip-ipam-operato
 make install
 oc new-project egressip-ipam-operator-local
 kustomize build ./config/local-development | oc apply -f - -n egressip-ipam-operator-local
-export token=$(oc serviceaccounts get-token 'egressip-ipam-operator-controller-manager' -n egressip-ipam-operator-local)
+export token=$(oc serviceaccounts get-token 'egressip-ipam-controller-manager' -n egressip-ipam-operator-local)
 export NAMESPACE=egressip-ipam-operator-local
 oc login --token ${token}
 make run ENABLE_WEBHOOKS=false
@@ -282,6 +290,7 @@ kubectl delete -f charts/egressip-ipam-operator/crds/crds.yaml
 
 ```shell
 export repo=raffaelespazzoli #replace with yours
+docker login quay.io/$repo
 make docker-build IMG=quay.io/$repo/egressip-ipam-operator:latest
 make docker-push IMG=quay.io/$repo/egressip-ipam-operator:latest
 ```
@@ -293,9 +302,10 @@ make manifests
 make bundle IMG=quay.io/$repo/egressip-ipam-operator:latest
 operator-sdk bundle validate ./bundle --select-optional name=operatorhub
 make bundle-build BUNDLE_IMG=quay.io/$repo/egressip-ipam-operator-bundle:latest
-podman push quay.io/$repo/egressip-ipam-operator-bundle:latest
+docker push quay.io/$repo/egressip-ipam-operator-bundle:latest
 operator-sdk bundle validate quay.io/$repo/egressip-ipam-operator-bundle:latest --select-optional name=operatorhub
 oc new-project egressip-ipam-operator
+oc label namespace egressip-ipam-operator openshift.io/cluster-monitoring="true"
 operator-sdk cleanup egressip-ipam-operator -n egressip-ipam-operator
 operator-sdk run bundle --install-mode AllNamespaces -n egressip-ipam-operator quay.io/$repo/egressip-ipam-operator-bundle:latest
 ```
@@ -357,6 +367,15 @@ once the egress IPAM object is ready run the following:
 ```shell
 oc apply -f test/egressIPAM-Azure.yaml
 oc apply -f test/namespace-Azure.yaml
+```
+
+#### Testing metrics
+
+```sh
+export operatorNamespace=egressip-ipam-operator-local # or egressip-ipam-operator
+oc label namespace ${operatorNamespace} openshift.io/cluster-monitoring="true"
+oc rsh -n openshift-monitoring -c prometheus prometheus-k8s-0 /bin/bash
+curl -v -s -k -H "Authorization: Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" https://resource-locker-operator-controller-manager-metrics.${operatorNamespace}.svc.cluster.local:8443/metrics
 ```
 
 ## Releasing
