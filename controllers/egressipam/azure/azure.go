@@ -1,3 +1,4 @@
+// +kubebuilder:skip
 package azure
 
 import (
