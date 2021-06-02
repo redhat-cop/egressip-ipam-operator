@@ -8,7 +8,7 @@ metadata:
     certified: "false"
     containerImage: quay.io/redhat-cop/egressip-ipam-operator
     createdAt: 03/13/2020
-    description: This operator provides automation around manageing egressIPs.
+    description: This operator provides automation around managing egressIPs.
     operatorframework.io/suggested-namespace: egressip-ipam-operator
     repository: https://github.com/redhat-cop/egressip-ipam-operator
     support: Best Effort
