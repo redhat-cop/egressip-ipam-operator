@@ -91,14 +91,14 @@ func main() {
 	}
 
 	if err = (&egressipam.EgressIPAMReconciler{
-		ReconcilerBase: util.NewReconcilerBase(mgr, mgr.GetEventRecorderFor("EgressIPAM_controller")),
+		ReconcilerBase: util.NewFromManager(mgr, mgr.GetEventRecorderFor("EgressIPAM_controller")),
 		Log:            ctrl.Log.WithName("controllers").WithName("EgressIPAM"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "EgressIPAM")
 		os.Exit(1)
 	}
 	if err = (&namespace.NamespaceReconciler{
-		ReconcilerBase: util.NewReconcilerBase(mgr, mgr.GetEventRecorderFor("Namespace_controller")),
+		ReconcilerBase: util.NewFromManager(mgr, mgr.GetEventRecorderFor("Namespace_controller")),
 		Log:            ctrl.Log.WithName("controllers").WithName("Namespace"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Namespace")
