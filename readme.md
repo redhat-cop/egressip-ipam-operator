@@ -249,6 +249,17 @@ Prometheus compatible metrics are exposed by the Operator and can be integrated 
 oc label namespace <namespace> openshift.io/cluster-monitoring="true"
 ```
 
+### Testing metrics
+
+```sh
+export operatorNamespace=egressip-ipam-operator-local # or egressip-ipam-operator
+oc label namespace ${operatorNamespace} openshift.io/cluster-monitoring="true"
+oc rsh -n openshift-monitoring -c prometheus prometheus-k8s-0 /bin/bash
+export operatorNamespace=egressip-ipam-operator-local # or egressip-ipam-operator
+curl -v -s -k -H "Authorization: Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" https://egressip-ipam-operator-controller-manager-metrics.${operatorNamespace}.svc.cluster.local:8443/metrics
+exit
+```
+
 ## Development
 
 ## Running the operator locally
@@ -257,7 +268,7 @@ oc label namespace <namespace> openshift.io/cluster-monitoring="true"
 make install
 oc new-project egressip-ipam-operator-local
 kustomize build ./config/local-development | oc apply -f - -n egressip-ipam-operator-local
-export token=$(oc serviceaccounts get-token 'egressip-ipam-controller-manager' -n egressip-ipam-operator-local)
+export token=$(oc serviceaccounts get-token 'egressip-ipam-operator-controller-manager' -n egressip-ipam-operator-local)
 export NAMESPACE=egressip-ipam-operator-local
 oc login --token ${token}
 make run ENABLE_WEBHOOKS=false
@@ -367,17 +378,6 @@ once the egress IPAM object is ready run the following:
 ```shell
 oc apply -f test/egressIPAM-Azure.yaml
 oc apply -f test/namespace-Azure.yaml
-```
-
-#### Testing metrics
-
-```sh
-export operatorNamespace=egressip-ipam-operator-local # or egressip-ipam-operator
-oc label namespace ${operatorNamespace} openshift.io/cluster-monitoring="true"
-oc rsh -n openshift-monitoring -c prometheus prometheus-k8s-0 /bin/bash
-export operatorNamespace=egressip-ipam-operator-local # or egressip-ipam-operator
-curl -v -s -k -H "Authorization: Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" https://egressip-ipam-operator-controller-manager-metrics.${operatorNamespace}.svc.cluster.local:8443/metrics
-exit
 ```
 
 ## Releasing
