@@ -63,7 +63,7 @@ If you are looking for High Availability, i.e. the ability to continue to operat
 
 ## Support for AWS
 
-In AWS as well as other cloud providers, one cannot freely assign IPs to machines. Additional steps need to be performed in this case. Considering this EgressIPAM
+In AWS, as well as other cloud providers, secondary IPs cannot simply be added to network interfaces from the machines themselves(as you would in legacy/on-premises Linux hosts).  Additional steps need to be performed in this case. Considering this EgressIPAM
 
 ```yaml
 apiVersion: redhatcop.redhat.io/v1alpha1
@@ -339,8 +339,8 @@ based on the output of the below command, configure your egressIPAM for AWS.
 export region=$(oc get infrastructure cluster -o jsonpath='{.status.platformStatus.aws.region}')
 for vmidurl in $(oc get nodes -l node-role.kubernetes.io/worker="" -o json | jq -r .items[].spec.providerID); do
   vmid=${vmidurl##*/}
-  subnetid=$(aws ec2 --region ${region} describe-instances --instance-ids ${vmid} | jq -r .Reservations[0].Instances[0].NetworkInterfaces[0].SubnetId)
-  echo $(aws ec2 --region ${region} describe-subnets --subnet-ids ${subnetid} | jq -r '.Subnets[0] | .CidrBlock + " " + .AvailabilityZone')
+  subnetid=$(aws ec2 --output json --region ${region} describe-instances --instance-ids ${vmid} | jq -r .Reservations[0].Instances[0].NetworkInterfaces[0].SubnetId)
+  echo $(aws ec2 --output json --region ${region} describe-subnets --subnet-ids ${subnetid} | jq -r '.Subnets[0] | .CidrBlock + " " + .AvailabilityZone')
 done
 ```  
 
