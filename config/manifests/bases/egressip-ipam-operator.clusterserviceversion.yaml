@@ -12,6 +12,7 @@ metadata:
     operatorframework.io/suggested-namespace: egressip-ipam-operator
     repository: https://github.com/redhat-cop/egressip-ipam-operator
     support: Best Effort
+    operators.openshift.io/infrastructure-features: '["Disconnected"]'
   name: egressip-ipam-operator.v0.0.0
   namespace: placeholder
 spec:
