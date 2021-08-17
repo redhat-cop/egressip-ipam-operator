@@ -199,7 +199,7 @@ func (r *EgressIPAMReconciler) processReconcileContext(rc *reconcilecontext.Reco
 		return r.ManageError(rc.Context, rc.EgressIPAM, err)
 	}
 
-	if isCloudInfrastructure(rc.Infrastructure) {
+	if isCloudInfrastructure(rc.Infrastructure) || len(rc.CIDRs) > 1 {
 		err = r.reconcileHSAssignedIPs(rc)
 		if err != nil {
 			r.Log.Error(err, "unable to reconcile hostsubnest with ", "nodes", assignedIPsByNode)

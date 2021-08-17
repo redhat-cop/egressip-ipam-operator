@@ -115,6 +115,7 @@ func (r *EgressIPAMReconciler) reconcileHSAssignedIPs(rc *reconcilecontext.Recon
 		hostsubnetc := hostsubnet.DeepCopy()
 		go func() {
 			if !strset.New(rc.FinallyAssignedIPsByNode[hostsubnetnamec]...).IsEqual(strset.New(GetHostHostSubnetEgressIPsAsStrings(hostsubnetc.EgressIPs)...)) {
+				hostsubnetc.EgressCIDRs = []ocpnetv1.HostSubnetEgressCIDR{}
 				hostsubnetc.EgressIPs = GetHostHostSubnetEgressIPs(rc.FinallyAssignedIPsByNode[hostsubnetnamec])
 				err := r.GetClient().Update(rc.Context, hostsubnetc, &client.UpdateOptions{})
 				if err != nil {
@@ -142,6 +143,7 @@ func (r *EgressIPAMReconciler) assignCIDRsToHostSubnets(rc *reconcilecontext.Rec
 			hostsubnet := rc.AllHostSubnets[node]
 			if !strset.New(GetHostSubnetCIDRsAsStrings(hostsubnet.EgressCIDRs)...).IsEqual(strset.New(cidrs...)) {
 				hostsubnet.EgressCIDRs = GetHostSubnetCIDRs(cidrs)
+				hostsubnet.EgressIPs = []ocpnetv1.HostSubnetEgressIP{}
 				err := r.GetClient().Update(rc.Context, &hostsubnet, &client.UpdateOptions{})
 				if err != nil {
 					r.Log.Error(err, "unable to update", "hostsubnet ", hostsubnet, "with cidrs", cidrs)
