@@ -59,7 +59,7 @@ This operator has the ability to detect failed nodes and move the egressIPs thes
 
 Shuffling EgressIPs around is an involved process because cloud providers are hardly designed for this use case especially when VM instances are carrying several EgressIPs. So we encourage users to test this process in their specific deployment as it will be certainly triggered when doing an OpenShift upgrade.
 
-If you are looking for High Availability, i.e. the ability to continue to operate when a the node carrying the egressIP goes down, you have to define multiple CIDRs in the CR. This way each namespace will get multiple EgressIPs enabling OpenShift to use the secondary EgressIP when the first EgressIP is not available.
+If you are looking for High Availability, i.e. the ability to continue to operate when the node carrying the EgressIP goes down, you have to define multiple CIDRs in the CR. This way each namespace will get multiple EgressIPs enabling OpenShift to use the secondary EgressIP when the first EgressIP is not available. Multiple egress EgressIPs per namespace are only supported when the EgressIPs are manually assigned to the node’s HostSubnet. However, the operator will take care of it and assign each EgressIP explicitly to the node instead of assigning the CIDR.
 
 ## Support for AWS
 
