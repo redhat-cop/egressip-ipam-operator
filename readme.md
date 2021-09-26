@@ -87,7 +87,7 @@ spec:
 When a namespace with the opt-in annotation is created, the following happens:
 
 1. for each of the CIDRs, an available IP is selected and assigned to the namespace.
-2. the relative `netnamespace` is update to reflect the assignment (multiple IPs will be assigned in this case).
+2. the relative `netnamespace` is updated to reflect the assignment (multiple IPs will be assigned in this case).
 3. one node per zone is selected to carry the egressIP.
 4. the relative aws machines are assigned the additional IP on the main interface (support for secondary interfaces in not available).
 5. the relative `hostsubnets` are updated to reflect the assigned IP, the `egressIP` field is updated.
@@ -116,15 +116,55 @@ spec:
       node-role.kubernetes.io/worker: ""
 ```
 
-Differently from AWS, in Azure networks can span multiple AZs and that is the way OCP is installed by default.
+Differently from AWS, in Azure networks can span multiple AZs and that is the way OCP is installed by default. Therefore you don't need to have multiple `cidrAssignments`.
 
 When a namespace with the opt-in annotation is created, the following happens:
 
-1. for the default vnet CIDR, an available IP is selected and assigned to the namespace.
-2. the relative `netnamespace` is update to reflect the assignment (multiple IPs will be assigned in this case).
+1. an available IP is selected and assigned to the namespace from the specified CIDR.
+2. the relative `netnamespace` is updated to reflect the assignment (a single IP will be assigned in this case).
 3. one node in the default vnet is selected to carry the egressIP.
 4. the relative Azure machine is assigned the additional IP on the primary NIC (support for secondary interfaces in not available).
 5. the relative `hostsubnet` is updated to reflect the assigned IP, the `egressIP` field is updated.
+
+## Support for Google Cloud
+
+In Google Cloud as well as other cloud providers, one cannot freely assign IPs to machines. Additional steps need to be performed in this case. Considering this EgressIPAM
+
+```yaml
+apiVersion: redhatcop.redhat.io/v1alpha1
+kind: EgressIPAM
+metadata:
+  name: egressipam-gcp
+spec:
+  # Add fields here
+  cidrAssignments:
+    - labelValue: ""
+      CIDR: 10.0.32.0/19
+      reservedIPs: 
+      - "10.0.32.8"
+  topologyLabel: "node-role.kubernetes.io/worker"
+  nodeSelector:
+    matchLabels:
+      node-role.kubernetes.io/worker: ""
+```
+
+Differently from AWS, in Google networks can span multiple AZs and that is the way OCP is installed by default. Therefore you don't need to have multiple `cidrAssignments`.
+
+If you decide to have multiple `cidrAssignments`, then each cidr should match a Google Cloud subnet cidr.
+
+When a namespace with the opt-in annotation is created, the following happens:
+
+1. an available IP is selected and assigned to the namespace from the specified CIDR.
+2. the relative `netnamespace` is updated to reflect the assignment (a single IP will be assigned in this case).
+3. one node in the corresponding worker node subnet is selected to carry the egressIP.
+4. the relative Google machine is assigned the additional IP on the primary NIC as an [AliasIP](https://cloud.google.com/vpc/docs/configure-alias-ip-ranges#api_7) (support for secondary interfaces in not available).
+5. the relative `hostsubnet` is updated to reflect the assigned IP, the `egressIP` field is updated.
+
+Google VM primary IPs are configured with a network suffix of `/32`. This is needed by Google Cloud SDN to work properly. The EgressIP controller uses the suffix to determine whether the an EgressIP can be admitted to a given node. As a result of the `/32` suffix, no EgressIPs can be carried on google cloud nodes. This hack fixes the issue, but breaks other aspects of OCP networking and so it is not safe to use.
+
+```shell
+oc apply -f oc apply -f ./test/machineconfig-hack-gcp.yaml 
+```
 
 ## Support for vSphere
 
@@ -389,6 +429,31 @@ once the egress IPAM object is ready run the following:
 ```shell
 oc apply -f test/egressIPAM-Azure.yaml
 oc apply -f test/namespace-Azure.yaml
+```
+
+### Google Cloud test
+
+based on the output of the below command, configure your egressIPAM for GCP (this assumes IPI installation).
+
+```shell
+export infrastructure_name=$(oc get infrastructure cluster -o jsonpath='{.status.infrastructureName}')
+export region=$(oc get infrastructure cluster -o jsonpath='{.status.platformStatus.gcp.region}')
+gcloud compute networks subnets describe --region ${region} ${infrastructure_name}-worker-subnet --format json | jq -r .ipCidrRange
+```
+
+apply the nodes hack
+
+```shell
+export suffix=/19
+export device=ens0
+envsubst < ./test/machineconfig-hack-gcp.yaml | oc apply -f -
+```
+
+once the egress IPAM object is ready run the following:
+
+```shell
+oc apply -f test/egressIPAM-gcp.yaml
+oc apply -f test/namespace-gcp.yaml
 ```
 
 ## Releasing
