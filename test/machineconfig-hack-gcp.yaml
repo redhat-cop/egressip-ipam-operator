@@ -1,0 +1,27 @@
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  labels:
+    machineconfiguration.openshift.io/role: worker
+  name: hack-gcp-node-ip-suffix
+spec:
+  config:
+    ignition:
+      version: 3.2.0
+    systemd:
+      units:
+      - contents: |
+          [Unit]
+          Description=changes the gcp vm ip primary suffix from /32 to the actual suffix on the node subnet /19 in this case
+          Wants=network-online.target
+          After=network-online.target
+          Before=crio.service
+
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/bin/bash -c 'ip a add $(ip -j address show dev ens4 scope global | jq -r .[0].addr_info[0].local)/19 dev ens4 && ip a del $(ip -j address show dev ens4 scope global | jq -r .[0].addr_info[0].local)/32 dev ens4'
+          
+          [Install]
+          WantedBy=multi-user.target
+        enabled: true
+        name: hack-gcp-node-ip-suffix.service

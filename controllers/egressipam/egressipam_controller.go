@@ -32,6 +32,7 @@ import (
 	"github.com/redhat-cop/egressip-ipam-operator/controllers/egressipam/aws"
 	"github.com/redhat-cop/egressip-ipam-operator/controllers/egressipam/azure"
 	"github.com/redhat-cop/egressip-ipam-operator/controllers/egressipam/baremetal"
+	"github.com/redhat-cop/egressip-ipam-operator/controllers/egressipam/gcp"
 	"github.com/redhat-cop/egressip-ipam-operator/controllers/egressipam/reconcilecontext"
 	"github.com/redhat-cop/operator-utils/pkg/util"
 	corev1 "k8s.io/api/core/v1"
@@ -221,7 +222,7 @@ func (r *EgressIPAMReconciler) GetInfrastructure() *ocpconfigv1.Infrastructure {
 	return r.infrastructure
 }
 
-// GetCredentialSecret returs the credentials secret to be used to instantiate cloud providers
+// GetCredentialSecret returns the credentials secret to be used to instantiate cloud providers
 func (r *EgressIPAMReconciler) GetCredentialSecret(context context.Context) (*corev1.Secret, error) {
 	namespace, err := r.GetOperatorNamespace()
 	if err != nil {
@@ -235,7 +236,7 @@ func (r *EgressIPAMReconciler) GetCredentialSecret(context context.Context) (*co
 		Namespace: namespace,
 	}, credentialSecret)
 	if err != nil {
-		r.Log.Error(err, "unable to retrive aws credential ", "secret", types.NamespacedName{
+		r.Log.Error(err, "unable to retrive credential ", "secret", types.NamespacedName{
 			Name:      credentialsSecretName,
 			Namespace: namespace,
 		})
@@ -398,7 +399,6 @@ func (r *EgressIPAMReconciler) loadReconcileContext(context context.Context, egr
 		}
 		rc.AllNodes = allNodes
 		results <- nil
-		return
 	}()
 
 	//hostsubnets
@@ -411,7 +411,6 @@ func (r *EgressIPAMReconciler) loadReconcileContext(context context.Context, egr
 		}
 		rc.AllHostSubnets = allHostSubnets
 		results <- nil
-		return
 	}()
 
 	//namespaces
@@ -431,7 +430,6 @@ func (r *EgressIPAMReconciler) loadReconcileContext(context context.Context, egr
 		r.Log.V(1).Info("", "initiallyAssignedNamespaces", getNamespaceNames(rc.InitiallyAssignedNamespaces))
 		r.Log.V(1).Info("", "unAssignedNamespaces", getNamespaceNames(rc.UnAssignedNamespaces))
 		results <- nil
-		return
 	}()
 
 	//netnamespace
@@ -447,14 +445,12 @@ func (r *EgressIPAMReconciler) loadReconcileContext(context context.Context, egr
 
 		r.Log.V(1).Info("", "netNamespaces", getNetNamespaceMapKeys(rc.NetNamespaces))
 		results <- nil
-		return
 	}()
 
 	//collect results
 	result := &multierror.Error{}
 	for range []string{"nodes", "hostsubnets", "namespaces", "netnamespaces"} {
-		err := <-results
-		multierror.Append(result, err)
+		result = multierror.Append(result, <-results)
 	}
 
 	if result.ErrorOrNil() != nil {
@@ -496,7 +492,7 @@ func (r *EgressIPAMReconciler) loadReconcileContext(context context.Context, egr
 	r.Log.V(1).Info("", "selectedNodesByCIDR", rc.SelectedNodesByCIDR)
 	r.Log.V(1).Info("", "selectedHostSubnetByCIDR", rc.SelectedHostSubnetsByCIDR)
 
-	switch rc.Infrastructure.Status.Platform {
+	switch rc.Infrastructure.Status.PlatformStatus.Type {
 	case ocpconfigv1.AWSPlatformType:
 		{
 			dc, err := r.GetDirectClientWithSchemeBuilders(machinev1beta1.AddToScheme)
@@ -525,6 +521,20 @@ func (r *EgressIPAMReconciler) loadReconcileContext(context context.Context, egr
 			}
 			rc.Infra = infra
 		}
+	case ocpconfigv1.GCPPlatformType:
+		{
+			dc, err := r.GetDirectClientWithSchemeBuilders()
+			if err != nil {
+				r.Log.Error(err, "unable to get direct client")
+				return &reconcilecontext.ReconcileContext{}, err
+			}
+			infra, err := gcp.NewGCPInfra(dc, rc)
+			if err != nil {
+				r.Log.Error(err, "unable to instatiate azure infra")
+				return &reconcilecontext.ReconcileContext{}, err
+			}
+			rc.Infra = infra
+		}
 	default:
 		{
 			infra := baremetal.NewBareMetalInfra()
@@ -546,13 +556,11 @@ func (r *EgressIPAMReconciler) loadReconcileContext(context context.Context, egr
 
 		r.Log.V(1).Info("", "Used IPs By CIDR", rc.UsedIPsByCIDR)
 		results <- nil
-		return
 	}()
 	// collect results
 	result = &multierror.Error{}
 	for range []string{"usedIPS"} {
-		err := <-results
-		multierror.Append(result, err)
+		result = multierror.Append(result, <-results)
 	}
 	if result.ErrorOrNil() != nil {
 		r.Log.Error(result, "unable ro run parallel aws initialization")
@@ -771,7 +779,7 @@ func (r *EgressIPAMReconciler) createCredentialRequest() error {
 
 	var providerSpec runtime.Object
 
-	switch infrastructure.Status.Platform {
+	switch infrastructure.Status.PlatformStatus.Type {
 	case ocpconfigv1.AWSPlatformType:
 		{
 			providerSpec = aws.GetAWSCredentialsRequestProviderSpec()
@@ -779,6 +787,10 @@ func (r *EgressIPAMReconciler) createCredentialRequest() error {
 	case ocpconfigv1.AzurePlatformType:
 		{
 			providerSpec = azure.GetAzureCredentialsRequestProviderSpec()
+		}
+	case ocpconfigv1.GCPPlatformType:
+		{
+			providerSpec = gcp.GetGCPCredentialsRequestProviderSpec()
 		}
 	default:
 		return nil

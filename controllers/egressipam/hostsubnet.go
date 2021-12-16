@@ -103,7 +103,6 @@ func (e *enqueForSelectingEgressIPAMHostSubnet) Delete(evt event.DeleteEvent, q 
 
 // Generic implements EventHandler
 func (e *enqueForSelectingEgressIPAMHostSubnet) Generic(evt event.GenericEvent, q workqueue.RateLimitingInterface) {
-	return
 }
 
 // ensures that hostsubntes have the correct egressIPs
@@ -125,12 +124,11 @@ func (r *EgressIPAMReconciler) reconcileHSAssignedIPs(rc *reconcilecontext.Recon
 				}
 			}
 			results <- nil
-			return
 		}()
 	}
 	result := &multierror.Error{}
 	for range rc.SelectedHostSubnets {
-		multierror.Append(result, <-results)
+		result = multierror.Append(result, <-results)
 	}
 	return result.ErrorOrNil()
 }
@@ -218,12 +216,11 @@ func (r *EgressIPAMReconciler) removeHostsubnetAssignedIPsAndCIDRs(rc *reconcile
 				}
 			}
 			results <- nil
-			return
 		}()
 	}
 	result := &multierror.Error{}
 	for range rc.SelectedHostSubnets {
-		multierror.Append(result, <-results)
+		result = multierror.Append(result, <-results)
 	}
 	return result.ErrorOrNil()
 }

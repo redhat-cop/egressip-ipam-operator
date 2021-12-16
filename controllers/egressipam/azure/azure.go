@@ -36,15 +36,17 @@ import (
 const userAgent = "egressip-ipam-operator-services"
 
 type AzureInfra struct {
-	//direct ocp client (not chached)
+	//direct ocp client (not cached)
 	dc client.Client
-	//aws client
+	//azure client
 	compute           *compute.VirtualMachinesClient
 	vnet              *network.VirtualNetworksClient
 	networkInterface  *network.InterfacesClient
 	log               logr.Logger
 	selectedInstances map[string]*compute.VirtualMachine
 }
+
+var _ reconcilecontext.Infra = &AzureInfra{}
 
 func NewAzureInfra(directClient client.Client, rc *reconcilecontext.ReconcileContext) (reconcilecontext.Infra, error) {
 	azureInfra := &AzureInfra{
@@ -81,13 +83,25 @@ func (i *AzureInfra) getAzureClients(infrastructure *ocpconfigv1.Infrastructure,
 	}
 	vmClient := compute.NewVirtualMachinesClient(subscription)
 	vmClient.Authorizer = authorizer
-	vmClient.AddToUserAgent(userAgent)
+	err = vmClient.AddToUserAgent(userAgent)
+	if err != nil {
+		i.log.Error(err, "unable to add to user agent")
+		return nil, nil, nil, err
+	}
 	vnetClient := network.NewVirtualNetworksClient(subscription)
 	vnetClient.Authorizer = authorizer
-	vnetClient.AddToUserAgent(userAgent)
+	err = vnetClient.AddToUserAgent(userAgent)
+	if err != nil {
+		i.log.Error(err, "unable to add to user agent")
+		return nil, nil, nil, err
+	}
 	networkClient := network.NewInterfacesClient(subscription)
 	networkClient.Authorizer = authorizer
-	networkClient.AddToUserAgent(userAgent)
+	err = networkClient.AddToUserAgent(userAgent)
+	if err != nil {
+		i.log.Error(err, "unable to add to user agent")
+		return nil, nil, nil, err
+	}
 	return &vmClient, &vnetClient, &networkClient, nil
 }
 
@@ -344,12 +358,11 @@ func (i *AzureInfra) removeAllAzureSecondaryIPs(rc *reconcilecontext.ReconcileCo
 				return
 			}
 			results <- nil
-			return
 		}()
 	}
 	result := &multierror.Error{}
 	for range rc.SelectedNodes {
-		multierror.Append(result, <-results)
+		result = multierror.Append(result, <-results)
 	}
 
 	return result.ErrorOrNil()
@@ -413,12 +426,11 @@ func (i *AzureInfra) removeUnNeededAzureAssignedIPs(rc *reconcilecontext.Reconci
 			}
 
 			results <- nil
-			return
 		}()
 	}
 	result := &multierror.Error{}
 	for range rc.FinallyAssignedIPsByNode {
-		multierror.Append(result, <-results)
+		result = multierror.Append(result, <-results)
 	}
 
 	return result.ErrorOrNil()
@@ -487,14 +499,12 @@ func (i *AzureInfra) addNeededAzureAssignedIPs(rc *reconcilecontext.ReconcileCon
 				results <- err
 				return
 			}
-
 			results <- nil
-			return
 		}()
 	}
 	result := &multierror.Error{}
 	for range rc.FinallyAssignedIPsByNode {
-		multierror.Append(result, <-results)
+		result = multierror.Append(result, <-results)
 	}
 
 	return result.ErrorOrNil()

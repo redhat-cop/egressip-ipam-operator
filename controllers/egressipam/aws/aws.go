@@ -25,13 +25,15 @@ import (
 )
 
 type AWSInfra struct {
-	//direct ocp client (not chached)
+	//direct ocp client (not cached)
 	dc client.Client
 	//aws client
 	c                 *ec2.EC2
 	log               logr.Logger
 	selectedInstances map[string]*ec2.Instance
 }
+
+var _ reconcilecontext.Infra = &AWSInfra{}
 
 func NewAWSInfra(directClient client.Client, rc *reconcilecontext.ReconcileContext) (reconcilecontext.Infra, error) {
 	aWSInfra := &AWSInfra{
@@ -116,14 +118,6 @@ func (i *AWSInfra) getAWSInstances(nodes map[string]corev1.Node) (map[string]*ec
 	return instances, nil
 }
 
-func getAWSIstancesMapKeys(instances map[string]*ec2.Instance) []string {
-	instanceIDs := []string{}
-	for id := range instances {
-		instanceIDs = append(instanceIDs, id)
-	}
-	return instanceIDs
-}
-
 func getAWSIDFromProviderID(providerID string) string {
 	strs := strings.Split(providerID, "/")
 	return strs[len(strs)-1]
@@ -169,12 +163,11 @@ func (i *AWSInfra) removeAWSUnusedIPs(rc *reconcilecontext.ReconcileContext) err
 				}
 			}
 			results <- nil
-			return
 		}()
 	}
 	result := &multierror.Error{}
 	for range rc.FinallyAssignedIPsByNode {
-		multierror.Append(result, <-results)
+		result = multierror.Append(result, <-results)
 	}
 
 	return result.ErrorOrNil()
@@ -216,12 +209,11 @@ func (i *AWSInfra) reconcileAWSAssignedIPs(rc *reconcilecontext.ReconcileContext
 				}
 			}
 			results <- nil
-			return
 		}()
 	}
 	result := &multierror.Error{}
 	for range rc.FinallyAssignedIPsByNode {
-		multierror.Append(result, <-results)
+		result = multierror.Append(result, <-results)
 	}
 	return result.ErrorOrNil()
 }
@@ -276,12 +268,11 @@ func (i *AWSInfra) removeAllAWSAssignedIPs(rc *reconcilecontext.ReconcileContext
 				}
 			}
 			results <- nil
-			return
 		}()
 	}
 	result := &multierror.Error{}
 	for range rc.SelectedNodes {
-		multierror.Append(result, <-results)
+		result = multierror.Append(result, <-results)
 	}
 	return result.ErrorOrNil()
 }
@@ -349,7 +340,6 @@ func (i *AWSInfra) getAWSUsedIPsByCIDR(rc *reconcilecontext.ReconcileContext) (m
 		i.log.Error(err, "unable to retrieve network interfaces ", "with request", describeNetworkInterfacesInput)
 		return map[string][]net.IP{}, err
 	}
-	i.log.V(1).Info("", "describeNetworkInterfacesResult", describeNetworkInterfacesResult)
 
 	usedIPsByCIDR := map[string][]net.IP{}
 	for _, cidr := range rc.CIDRs {
