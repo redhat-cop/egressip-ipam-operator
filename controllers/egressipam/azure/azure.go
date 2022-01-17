@@ -19,6 +19,7 @@ import (
 	ocpconfigv1 "github.com/openshift/api/config/v1"
 	cloudcredentialv1 "github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1"
 	machinev1beta1 "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
+	redhatcopv1alpha1 "github.com/redhat-cop/egressip-ipam-operator/api/v1alpha1"
 	"github.com/redhat-cop/egressip-ipam-operator/controllers/egressipam/reconcilecontext"
 	"github.com/scylladb/go-set/strset"
 	corev1 "k8s.io/api/core/v1"
@@ -34,6 +35,8 @@ import (
 //   --private-ip-address 10.44.9.70
 
 const userAgent = "egressip-ipam-operator-services"
+
+const AzureLoadBalancerAttachAnnotation = "egressip-ipam-operator.redhat-cop.io/azure-load-balancer-attach"
 
 type AzureInfra struct {
 	//direct ocp client (not chached)
@@ -426,6 +429,7 @@ func (i *AzureInfra) removeUnNeededAzureAssignedIPs(rc *reconcilecontext.Reconci
 
 func (i *AzureInfra) addNeededAzureAssignedIPs(rc *reconcilecontext.ReconcileContext) error {
 	results := make(chan error)
+	attachInternalLoadBalancerPool := shouldAttachInternalLoadBalancerPool(rc.EgressIPAM)
 	defer close(results)
 	for node, ips := range rc.FinallyAssignedIPsByNode {
 		nodec := node
@@ -434,6 +438,7 @@ func (i *AzureInfra) addNeededAzureAssignedIPs(rc *reconcilecontext.ReconcileCon
 			instance := i.selectedInstances[nodec]
 			azureAssignedIPs := []string{}
 			networkInterface := network.Interface{}
+			var loadBalancerBackendAddressPools *[]network.BackendAddressPool
 			for _, netif := range *instance.NetworkProfile.NetworkInterfaces {
 				if *netif.Primary {
 					//load network interface
@@ -452,6 +457,9 @@ func (i *AzureInfra) addNeededAzureAssignedIPs(rc *reconcilecontext.ReconcileCon
 					}
 				}
 			}
+			if attachInternalLoadBalancerPool {
+				loadBalancerBackendAddressPools = (*networkInterface.IPConfigurations)[0].LoadBalancerBackendAddressPools
+			}
 			ipConfigurations := *networkInterface.IPConfigurations
 			toBeAssignedIPs := strset.Difference(strset.New(ipsc...), strset.New(azureAssignedIPs...)).List()
 			//add needed IPs
@@ -468,7 +476,7 @@ func (i *AzureInfra) addNeededAzureAssignedIPs(rc *reconcilecontext.ReconcileCon
 							PrivateIPAllocationMethod:       network.Static,
 							Subnet:                          (*networkInterface.IPConfigurations)[0].Subnet,
 							Primary:                         &untrue,
-							LoadBalancerBackendAddressPools: (*networkInterface.IPConfigurations)[0].LoadBalancerBackendAddressPools,
+							LoadBalancerBackendAddressPools: loadBalancerBackendAddressPools,
 						},
 					}
 					ipConfigurations = append(ipConfigurations, newIPConfiguration)
@@ -541,6 +549,15 @@ func getNameFromResourceID(id string) string {
 
 func getResourceGroupFromResourceID(id string) string {
 	return strings.Split(id, "/")[4]
+}
+
+func shouldAttachInternalLoadBalancerPool(egresIPam *redhatcopv1alpha1.EgressIPAM) bool {
+
+	loadBalancerAttachAnnotation, ok := egresIPam.GetAnnotations()[AzureLoadBalancerAttachAnnotation]
+	if ok {
+		return loadBalancerAttachAnnotation != "false"
+	}
+	return true
 }
 
 // AzureMachineProviderSpec is the type that will be embedded in a Machine.Spec.ProviderSpec field
