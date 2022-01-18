@@ -429,7 +429,6 @@ func (i *AzureInfra) removeUnNeededAzureAssignedIPs(rc *reconcilecontext.Reconci
 
 func (i *AzureInfra) addNeededAzureAssignedIPs(rc *reconcilecontext.ReconcileContext) error {
 	results := make(chan error)
-	attachInternalLoadBalancerPool := shouldAttachInternalLoadBalancerPool(rc.EgressIPAM)
 	defer close(results)
 	for node, ips := range rc.FinallyAssignedIPsByNode {
 		nodec := node
@@ -457,7 +456,7 @@ func (i *AzureInfra) addNeededAzureAssignedIPs(rc *reconcilecontext.ReconcileCon
 					}
 				}
 			}
-			if attachInternalLoadBalancerPool {
+			if shouldAttachInternalLoadBalancerPool(rc.EgressIPAM) {
 				loadBalancerBackendAddressPools = (*networkInterface.IPConfigurations)[0].LoadBalancerBackendAddressPools
 			}
 			ipConfigurations := *networkInterface.IPConfigurations
