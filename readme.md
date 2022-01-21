@@ -126,7 +126,7 @@ When a namespace with the opt-in annotation is created, the following happens:
 4. the relative Azure machine is assigned the additional IP on the primary NIC (support for secondary interfaces in not available).
 5. the relative `hostsubnet` is updated to reflect the assigned IP, the `egressIP` field is updated.
 
-By default, the Egress IP address is added to the members of the backend pool of the load balancer. The determination of whether to attach this assignment is configured through the `egressip-ipam-operator.redhat-cop.io/azure-load-balancer-attach=<true|false>` annotation.
+By default, the Egress IP address is added to the members of the backend pool of the load balancer. The determination of whether to attach this assignment is configured through the `egressip-ipam-operator.redhat-cop.io/azure-egress-load-balancer` annotation. Omitting the attachment can be set by specifying a value of `none`. 
 
 ## Support for vSphere
 
