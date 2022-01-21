@@ -36,7 +36,14 @@ import (
 
 const userAgent = "egressip-ipam-operator-services"
 
-const AzureLoadBalancerAttachAnnotation = "egressip-ipam-operator.redhat-cop.io/azure-load-balancer-attach"
+const AzureEgressLoadBalancerAnnotation = "egressip-ipam-operator.redhat-cop.io/azure-egress-load-balancer"
+
+const (
+	AzureEgressLoadBalancerSameAsPrimaryIp AzureEgressLoadBalancer = "same-as-primary-ip"
+	AzureEgressLoadBalancerNone            AzureEgressLoadBalancer = "none"
+)
+
+type AzureEgressLoadBalancer string
 
 type AzureInfra struct {
 	//direct ocp client (not chached)
@@ -456,8 +463,11 @@ func (i *AzureInfra) addNeededAzureAssignedIPs(rc *reconcilecontext.ReconcileCon
 					}
 				}
 			}
-			if shouldAttachInternalLoadBalancerPool(rc.EgressIPAM) {
-				loadBalancerBackendAddressPools = (*networkInterface.IPConfigurations)[0].LoadBalancerBackendAddressPools
+			loadBalancerBackendAddressPools, err := getLoadBalancerPools(rc.EgressIPAM, networkInterface)
+			if err != nil {
+				i.log.Error(err, "unable to determine load balancer pools", "network interface", networkInterface.Name)
+				results <- err
+				return
 			}
 			ipConfigurations := *networkInterface.IPConfigurations
 			toBeAssignedIPs := strset.Difference(strset.New(ipsc...), strset.New(azureAssignedIPs...)).List()
@@ -550,13 +560,16 @@ func getResourceGroupFromResourceID(id string) string {
 	return strings.Split(id, "/")[4]
 }
 
-func shouldAttachInternalLoadBalancerPool(egresIPam *redhatcopv1alpha1.EgressIPAM) bool {
+func getLoadBalancerPools(egresIPam *redhatcopv1alpha1.EgressIPAM, networkInterface network.Interface) (*[]network.BackendAddressPool, error) {
 
-	loadBalancerAttachAnnotation, ok := egresIPam.GetAnnotations()[AzureLoadBalancerAttachAnnotation]
+	// Check if Azure Egress Load Balancer annotation set to "none". Otherwise return the member of the pip
+	loadBalancerAttachAnnotation, ok := egresIPam.GetAnnotations()[AzureEgressLoadBalancerAnnotation]
 	if ok {
-		return loadBalancerAttachAnnotation != "false"
+		if string(AzureEgressLoadBalancerNone) == loadBalancerAttachAnnotation {
+			return nil, nil
+		}
 	}
-	return true
+	return (*networkInterface.IPConfigurations)[0].LoadBalancerBackendAddressPools, nil
 }
 
 // AzureMachineProviderSpec is the type that will be embedded in a Machine.Spec.ProviderSpec field
