@@ -72,19 +72,19 @@ type EgressIPAMReconciler struct {
 var (
 	ipCapacity = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Subsystem: "egressip-ipam-operator",
+			Subsystem: "egressip",
 			Name:      "ip_capacity",
 			Help:      "Number of IPs that a node can carry (including the prinary IP)",
 		},
-		[]string{"egress-ipam", "node"},
+		[]string{"egressipam", "node"},
 	)
 	ipAllocated = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Subsystem: "egressip-ipam-operator",
+			Subsystem: "egressip",
 			Name:      "ip_allocated",
 			Help:      "Number IPs allocated to a node (including the prinary IP)",
 		},
-		[]string{"egress-ipam", "node"},
+		[]string{"egressipam", "node"},
 	)
 )
 
@@ -247,7 +247,8 @@ func (r *EgressIPAMReconciler) processReconcileContext(rc *reconcilecontext.Reco
 func (r *EgressIPAMReconciler) updateMetrics(rc *reconcilecontext.ReconcileContext, instance *redhatcopv1alpha1.EgressIPAM) {
 	for node, ips := range rc.FinallyAssignedIPsByNode {
 		gauge := ipAllocated.WithLabelValues(instance.Name, node)
-		gauge.Set(float64(len(ips)))
+		//we add one to account for the primary ip
+		gauge.Set(float64(len(ips) + 1))
 	}
 	for node := range rc.AllNodes {
 		gauge := ipCapacity.WithLabelValues(instance.Name, node)

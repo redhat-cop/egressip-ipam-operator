@@ -287,6 +287,16 @@ oc login --token ${token}
 make run ENABLE_WEBHOOKS=false
 ```
 
+```shell
+export repo=raffaelespazzoli
+docker login quay.io/$repo
+oc new-project egressip-ipam-operator
+oc project egressip-ipam-operator
+oc label namespace egressip-ipam-operator openshift.io/cluster-monitoring="true"
+envsubst < config/local-development/tilt/env-replace-image.yaml > config/local-development/tilt/replace-image.yaml
+tilt up
+```
+
 ### Test helm chart locally
 
 Define an image and tag. For example...

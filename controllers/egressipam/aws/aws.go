@@ -233,6 +233,7 @@ func GetAWSCredentialsRequestProviderSpec() *cloudcredentialv1.AWSProviderSpec {
 					"ec2:AssignPrivateIpAddresses",
 					"ec2:DescribeSubnets",
 					"ec2:DescribeNetworkInterfaces",
+					"ec2:DescribeInstanceTypes",
 				},
 				Effect:   "Allow",
 				Resource: "*",
@@ -441,7 +442,7 @@ func (i *AWSInfra) GetIPCapacity(node *corev1.Node) (uint32, error) {
 		i.log.Error(err, "unable to get instance type cache")
 		return 0, err
 	}
-	instanceType, ok := node.Annotations["beta.kubernetes.io/instance-type"]
+	instanceType, ok := node.Labels["beta.kubernetes.io/instance-type"]
 	if !ok {
 		err := errors.New("unable to determinte instance type")
 		i.log.Error(err, "unable to get capacity for", "node", node)
@@ -476,29 +477,8 @@ func (i *AWSInfra) getInstanceTypeCache(ctx context.Context) (*instanceTypeCache
 }
 
 func (i *AWSInfra) initializeIntanceTypeCache(ctx context.Context, cache *instanceTypeCache) error {
-	instanceTypesInRegion := []*string{}
 	instanceTypeMap := map[string]ec2.InstanceTypeInfo{}
-	err := i.c.DescribeInstanceTypeOfferingsPagesWithContext(ctx, &ec2.DescribeInstanceTypeOfferingsInput{
-		Filters: []*ec2.Filter{
-			{
-				Name:   aws.String("location"),
-				Values: []*string{aws.String(i.region)},
-			},
-		},
-	}, func(ditoo *ec2.DescribeInstanceTypeOfferingsOutput, b bool) bool {
-		for i := range ditoo.InstanceTypeOfferings {
-			instanceTypesInRegion = append(instanceTypesInRegion, ditoo.InstanceTypeOfferings[i].InstanceType)
-		}
-		return true
-	})
-	if err != nil {
-		i.log.Error(err, "unable to list instance types in region")
-		return err
-	}
-
-	err = i.c.DescribeInstanceTypesPagesWithContext(ctx, &ec2.DescribeInstanceTypesInput{
-		InstanceTypes: instanceTypesInRegion,
-	}, func(dito *ec2.DescribeInstanceTypesOutput, b bool) bool {
+	err := i.c.DescribeInstanceTypesPagesWithContext(ctx, &ec2.DescribeInstanceTypesInput{}, func(dito *ec2.DescribeInstanceTypesOutput, b bool) bool {
 		for i := range dito.InstanceTypes {
 			instanceTypeMap[*dito.InstanceTypes[i].InstanceType] = *dito.InstanceTypes[i]
 		}

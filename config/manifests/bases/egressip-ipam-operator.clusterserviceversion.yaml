@@ -13,6 +13,7 @@ metadata:
     operators.openshift.io/infrastructure-features: '["Disconnected"]'
     repository: https://github.com/redhat-cop/egressip-ipam-operator
     support: Best Effort
+    operatorframework.io/cluster-monitoring: 'true'
   labels:
     operatorframework.io/arch.amd64: supported
     operatorframework.io/arch.arm64: supported
