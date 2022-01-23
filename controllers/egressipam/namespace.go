@@ -60,7 +60,6 @@ func (e *enqueForSelectedEgressIPAMNamespace) Delete(evt event.DeleteEvent, q wo
 
 // Generic implements EventHandler
 func (e *enqueForSelectedEgressIPAMNamespace) Generic(evt event.GenericEvent, q workqueue.RateLimitingInterface) {
-	return
 }
 
 func (r *EgressIPAMReconciler) getReferringNamespaces(rc *reconcilecontext.ReconcileContext) (referringNmespaces map[string]corev1.Namespace, unassignedNamespaces []corev1.Namespace, assignedNamespaces []corev1.Namespace, err error) {
@@ -132,12 +131,11 @@ func (r *EgressIPAMReconciler) removeNamespaceAssignedIPs(rc *reconcilecontext.R
 				return
 			}
 			results <- nil
-			return
 		}()
 	}
 	var result *multierror.Error
 	for range rc.InitiallyAssignedNamespaces {
-		multierror.Append(result, <-results)
+		result = multierror.Append(result, <-results)
 	}
 	return result.ErrorOrNil()
 }

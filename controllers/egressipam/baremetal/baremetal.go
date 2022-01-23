@@ -1,10 +1,12 @@
 package baremetal
 
 import (
+	"math"
 	"net"
 
 	"github.com/go-logr/logr"
 	"github.com/redhat-cop/egressip-ipam-operator/controllers/egressipam/reconcilecontext"
+	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
@@ -42,4 +44,8 @@ func (bm *BareMetalInfra) ReconcileInstanceSecondaryIPs(rc *reconcilecontext.Rec
 // RemoveAllAssignedIPs uncoditionally remoevs all the assigned IPs to VMs, used in clean-up login
 func (bm *BareMetalInfra) RemoveAllAssignedIPs(rc *reconcilecontext.ReconcileContext) error {
 	return nil
+}
+
+func (bm *BareMetalInfra) GetIPCapacity(node *corev1.Node) (uint32, error) {
+	return math.MaxUint32, nil
 }

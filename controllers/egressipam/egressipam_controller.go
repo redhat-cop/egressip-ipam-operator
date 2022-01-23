@@ -28,6 +28,7 @@ import (
 	ocpnetv1 "github.com/openshift/api/network/v1"
 	cloudcredentialv1 "github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1"
 	machinev1beta1 "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
+	"github.com/prometheus/client_golang/prometheus"
 	redhatcopv1alpha1 "github.com/redhat-cop/egressip-ipam-operator/api/v1alpha1"
 	"github.com/redhat-cop/egressip-ipam-operator/controllers/egressipam/aws"
 	"github.com/redhat-cop/egressip-ipam-operator/controllers/egressipam/azure"
@@ -46,6 +47,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
@@ -65,6 +67,30 @@ type EgressIPAMReconciler struct {
 	Log            logr.Logger
 	controllerName string
 	infrastructure *ocpconfigv1.Infrastructure
+}
+
+var (
+	ipCapacity = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Subsystem: "egressip-ipam-operator",
+			Name:      "ip_capacity",
+			Help:      "Number of IPs that a node can carry (including the prinary IP)",
+		},
+		[]string{"egress-ipam", "node"},
+	)
+	ipAllocated = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Subsystem: "egressip-ipam-operator",
+			Name:      "ip_allocated",
+			Help:      "Number IPs allocated to a node (including the prinary IP)",
+		},
+		[]string{"egress-ipam", "node"},
+	)
+)
+
+func init() {
+	// Register custom metrics with the global prometheus registry
+	metrics.Registry.MustRegister(ipCapacity, ipAllocated)
 }
 
 // +kubebuilder:rbac:groups=redhatcop.redhat.io,resources=egressipams,verbs=get;list;watch;create;update;patch;delete
@@ -213,7 +239,26 @@ func (r *EgressIPAMReconciler) processReconcileContext(rc *reconcilecontext.Reco
 		}
 	}
 
+	r.updateMetrics(rc, rc.EgressIPAM)
+
 	return r.ManageSuccess(rc.Context, rc.EgressIPAM)
+}
+
+func (r *EgressIPAMReconciler) updateMetrics(rc *reconcilecontext.ReconcileContext, instance *redhatcopv1alpha1.EgressIPAM) {
+	for node, ips := range rc.FinallyAssignedIPsByNode {
+		gauge := ipAllocated.WithLabelValues(instance.Name, node)
+		gauge.Set(float64(len(ips)))
+	}
+	for node := range rc.AllNodes {
+		gauge := ipCapacity.WithLabelValues(instance.Name, node)
+		nodeInstance := rc.AllNodes[node]
+		capacity, err := rc.Infra.GetIPCapacity(&nodeInstance)
+		if err != nil {
+			r.Log.Error(err, "unable to get ip capacity for", "node", node)
+			//silently fail
+		}
+		gauge.Set(float64(capacity))
+	}
 }
 
 // GetInfrastructure return the openshift infrastructure object, notice that this is looked up only once in the duration of the operatgro lifecyle and the it's cached.
@@ -398,7 +443,6 @@ func (r *EgressIPAMReconciler) loadReconcileContext(context context.Context, egr
 		}
 		rc.AllNodes = allNodes
 		results <- nil
-		return
 	}()
 
 	//hostsubnets
@@ -411,7 +455,6 @@ func (r *EgressIPAMReconciler) loadReconcileContext(context context.Context, egr
 		}
 		rc.AllHostSubnets = allHostSubnets
 		results <- nil
-		return
 	}()
 
 	//namespaces
@@ -431,7 +474,6 @@ func (r *EgressIPAMReconciler) loadReconcileContext(context context.Context, egr
 		r.Log.V(1).Info("", "initiallyAssignedNamespaces", getNamespaceNames(rc.InitiallyAssignedNamespaces))
 		r.Log.V(1).Info("", "unAssignedNamespaces", getNamespaceNames(rc.UnAssignedNamespaces))
 		results <- nil
-		return
 	}()
 
 	//netnamespace
@@ -447,14 +489,13 @@ func (r *EgressIPAMReconciler) loadReconcileContext(context context.Context, egr
 
 		r.Log.V(1).Info("", "netNamespaces", getNetNamespaceMapKeys(rc.NetNamespaces))
 		results <- nil
-		return
 	}()
 
 	//collect results
 	result := &multierror.Error{}
 	for range []string{"nodes", "hostsubnets", "namespaces", "netnamespaces"} {
 		err := <-results
-		multierror.Append(result, err)
+		result = multierror.Append(result, err)
 	}
 
 	if result.ErrorOrNil() != nil {
@@ -496,7 +537,7 @@ func (r *EgressIPAMReconciler) loadReconcileContext(context context.Context, egr
 	r.Log.V(1).Info("", "selectedNodesByCIDR", rc.SelectedNodesByCIDR)
 	r.Log.V(1).Info("", "selectedHostSubnetByCIDR", rc.SelectedHostSubnetsByCIDR)
 
-	switch rc.Infrastructure.Status.Platform {
+	switch rc.Infrastructure.Status.PlatformStatus.Type {
 	case ocpconfigv1.AWSPlatformType:
 		{
 			dc, err := r.GetDirectClientWithSchemeBuilders(machinev1beta1.AddToScheme)
@@ -546,13 +587,12 @@ func (r *EgressIPAMReconciler) loadReconcileContext(context context.Context, egr
 
 		r.Log.V(1).Info("", "Used IPs By CIDR", rc.UsedIPsByCIDR)
 		results <- nil
-		return
 	}()
 	// collect results
 	result = &multierror.Error{}
 	for range []string{"usedIPS"} {
 		err := <-results
-		multierror.Append(result, err)
+		result = multierror.Append(result, err)
 	}
 	if result.ErrorOrNil() != nil {
 		r.Log.Error(result, "unable ro run parallel aws initialization")
@@ -771,7 +811,7 @@ func (r *EgressIPAMReconciler) createCredentialRequest() error {
 
 	var providerSpec runtime.Object
 
-	switch infrastructure.Status.Platform {
+	switch infrastructure.Status.PlatformStatus.Type {
 	case ocpconfigv1.AWSPlatformType:
 		{
 			providerSpec = aws.GetAWSCredentialsRequestProviderSpec()

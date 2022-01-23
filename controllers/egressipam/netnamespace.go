@@ -80,12 +80,10 @@ func (e *enqueForSelectedEgressIPAMNetNamespace) Update(evt event.UpdateEvent, q
 
 // Delete implements EventHandler
 func (e *enqueForSelectedEgressIPAMNetNamespace) Delete(evt event.DeleteEvent, q workqueue.RateLimitingInterface) {
-	return
 }
 
 // Generic implements EventHandler
 func (e *enqueForSelectedEgressIPAMNetNamespace) Generic(evt event.GenericEvent, q workqueue.RateLimitingInterface) {
-	return
 }
 
 func (r *EgressIPAMReconciler) getNamespace(netnamespace *ocpnetv1.NetNamespace) (corev1.Namespace, error) {
@@ -123,12 +121,11 @@ func (r *EgressIPAMReconciler) reconcileNetNamespaces(rc *reconcilecontext.Recon
 				}
 			}
 			results <- nil
-			return
 		}()
 	}
 	result := &multierror.Error{}
 	for range rc.FinallyAssignedNamespaces {
-		multierror.Append(result, <-results)
+		result = multierror.Append(result, <-results)
 	}
 	return result.ErrorOrNil()
 }
@@ -150,12 +147,11 @@ func (r *EgressIPAMReconciler) removeNetnamespaceAssignedIPs(rc *reconcilecontex
 				}
 			}
 			results <- nil
-			return
 		}()
 	}
 	result := &multierror.Error{}
 	for range rc.ReferringNamespaces {
-		multierror.Append(result, <-results)
+		result = multierror.Append(result, <-results)
 	}
 	return result.ErrorOrNil()
 }

@@ -91,13 +91,25 @@ func (i *AzureInfra) getAzureClients(infrastructure *ocpconfigv1.Infrastructure,
 	}
 	vmClient := compute.NewVirtualMachinesClient(subscription)
 	vmClient.Authorizer = authorizer
-	vmClient.AddToUserAgent(userAgent)
+	err = vmClient.AddToUserAgent(userAgent)
+	if err != nil {
+		i.log.Error(err, "unable to add user agent to vmclient")
+		return nil, nil, nil, err
+	}
 	vnetClient := network.NewVirtualNetworksClient(subscription)
 	vnetClient.Authorizer = authorizer
-	vnetClient.AddToUserAgent(userAgent)
+	err = vnetClient.AddToUserAgent(userAgent)
+	if err != nil {
+		i.log.Error(err, "unable to add user agent to vneclient")
+		return nil, nil, nil, err
+	}
 	networkClient := network.NewInterfacesClient(subscription)
 	networkClient.Authorizer = authorizer
-	networkClient.AddToUserAgent(userAgent)
+	err = networkClient.AddToUserAgent(userAgent)
+	if err != nil {
+		i.log.Error(err, "unable to add user agent to networkclient")
+		return nil, nil, nil, err
+	}
 	return &vmClient, &vnetClient, &networkClient, nil
 }
 
@@ -354,12 +366,11 @@ func (i *AzureInfra) removeAllAzureSecondaryIPs(rc *reconcilecontext.ReconcileCo
 				return
 			}
 			results <- nil
-			return
 		}()
 	}
 	result := &multierror.Error{}
 	for range rc.SelectedNodes {
-		multierror.Append(result, <-results)
+		result = multierror.Append(result, <-results)
 	}
 
 	return result.ErrorOrNil()
@@ -423,12 +434,11 @@ func (i *AzureInfra) removeUnNeededAzureAssignedIPs(rc *reconcilecontext.Reconci
 			}
 
 			results <- nil
-			return
 		}()
 	}
 	result := &multierror.Error{}
 	for range rc.FinallyAssignedIPsByNode {
-		multierror.Append(result, <-results)
+		result = multierror.Append(result, <-results)
 	}
 
 	return result.ErrorOrNil()
@@ -506,12 +516,11 @@ func (i *AzureInfra) addNeededAzureAssignedIPs(rc *reconcilecontext.ReconcileCon
 			}
 
 			results <- nil
-			return
 		}()
 	}
 	result := &multierror.Error{}
 	for range rc.FinallyAssignedIPsByNode {
-		multierror.Append(result, <-results)
+		result = multierror.Append(result, <-results)
 	}
 
 	return result.ErrorOrNil()
@@ -626,4 +635,10 @@ type AzureMachineProviderSpec struct {
 
 	NetworkResourceGroup string `json:"networkResourceGroup,omitempty"`
 	ResourceGroup        string `json:"resourceGroup,omitempty"`
+}
+
+func (i *AzureInfra) GetIPCapacity(node *corev1.Node) (uint32, error) {
+	// https://docs.microsoft.com/en-us/azure/azure-resource-manager/management/azure-subscription-service-limits?toc=/azure/virtual-network/toc.json#networking-limits
+	// is this correct / so simple?
+	return 256, nil
 }

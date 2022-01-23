@@ -1,12 +1,10 @@
 package egressipam
 
 import (
-	"context"
 	"errors"
 	"net"
 
 	"github.com/go-logr/logr"
-	ocpnetv1 "github.com/openshift/api/network/v1"
 	redhatcopv1alpha1 "github.com/redhat-cop/egressip-ipam-operator/api/v1alpha1"
 	"github.com/redhat-cop/egressip-ipam-operator/controllers/egressipam/reconcilecontext"
 	corev1 "k8s.io/api/core/v1"
@@ -83,25 +81,23 @@ func (e *enqueForSelectingEgressIPAMNode) Update(evt event.UpdateEvent, q workqu
 
 // Delete implements EventHandler
 func (e *enqueForSelectingEgressIPAMNode) Delete(evt event.DeleteEvent, q workqueue.RateLimitingInterface) {
-	return
 }
 
 // Generic implements EventHandler
 func (e *enqueForSelectingEgressIPAMNode) Generic(evt event.GenericEvent, q workqueue.RateLimitingInterface) {
-	return
 }
 
-func (r *EgressIPAMReconciler) getNode(context context.Context, hostsubnet *ocpnetv1.HostSubnet) (corev1.Node, error) {
-	node := &corev1.Node{}
-	err := r.GetClient().Get(context, types.NamespacedName{
-		Name: hostsubnet.Host,
-	}, node)
-	if err != nil {
-		r.Log.Error(err, "unable to get node from", "hostsubnet", hostsubnet)
-		return corev1.Node{}, err
-	}
-	return *node, nil
-}
+// func (r *EgressIPAMReconciler) getNode(context context.Context, hostsubnet *ocpnetv1.HostSubnet) (corev1.Node, error) {
+// 	node := &corev1.Node{}
+// 	err := r.GetClient().Get(context, types.NamespacedName{
+// 		Name: hostsubnet.Host,
+// 	}, node)
+// 	if err != nil {
+// 		r.Log.Error(err, "unable to get node from", "hostsubnet", hostsubnet)
+// 		return corev1.Node{}, err
+// 	}
+// 	return *node, nil
+// }
 
 func (r *EgressIPAMReconciler) getSelectedNodes(rc *reconcilecontext.ReconcileContext) (map[string]corev1.Node, error) {
 	selector, err := metav1.LabelSelectorAsSelector(&rc.EgressIPAM.Spec.NodeSelector)
