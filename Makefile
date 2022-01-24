@@ -208,11 +208,11 @@ helmchart: kustomize
 	mkdir -p ./charts/${OPERATOR_NAME}/templates
 	mkdir -p ./charts/${OPERATOR_NAME}/crds
 	cp ./config/helmchart/templates/* ./charts/${OPERATOR_NAME}/templates
-	$(KUSTOMIZE) build ./config/helmchart | sed 's/namespace: system/namespace: {{ .Release.Namespace }}/' > ./charts/${OPERATOR_NAME}/templates/rbac.yaml
+	$(KUSTOMIZE) build ./config/helmchart | sed 's/{{/<</' | sed 's/}}/>>/' | sed 's/<</{{ "{{" }}/' | sed 's/>>/{{ "}}" }}/' | sed 's/namespace: system/namespace: {{ .Release.Namespace }}/' > ./charts/${OPERATOR_NAME}/templates/rbac.yaml
 	if [ -d "./config/crd" ]; then $(KUSTOMIZE) build ./config/crd > ./charts/${OPERATOR_NAME}/crds/crds.yaml; fi
 	version=${VERSION} envsubst < ./config/helmchart/Chart.yaml.tpl  > ./charts/${OPERATOR_NAME}/Chart.yaml
 	version=${VERSION} image_repo=$${IMG%:*} envsubst < ./config/helmchart/values.yaml.tpl  > ./charts/${OPERATOR_NAME}/values.yaml
-	sed -i '/^apiVersion: monitoring.coreos.com/i {{ if .Values.enableMonitoring }}' ./charts/${OPERATOR_NAME}/templates/rbac.yaml
+	sed -i '0,/^apiVersion: monitoring.coreos.com/s/^apiVersion: monitoring.coreos.com/{{ if .Values.enableMonitoring }}\n&/' ./charts/${OPERATOR_NAME}/templates/rbac.yaml
 	echo {{ end }} >> ./charts/${OPERATOR_NAME}/templates/rbac.yaml
 	helm lint ./charts/${OPERATOR_NAME}	
 
