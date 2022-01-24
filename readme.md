@@ -3,8 +3,38 @@
 ![build status](https://github.com/redhat-cop/egressip-ipam-operator/workflows/push/badge.svg)
 [![Go Report Card](https://goreportcard.com/badge/github.com/redhat-cop/egressip-ipam-operator)](https://goreportcard.com/report/github.com/redhat-cop/egressip-ipam-operator)
 ![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/redhat-cop/egressip-ipam-operator)
+[![CRD Docs](https://img.shields.io/badge/CRD-Docs-brightgreen)](https://doc.crds.dev/github.com/redhat-cop/egressip-ipam-operator)
 
 This operator automates the assignment of egressIPs to namespaces.
+
+- [EgressIP IPAM Operator](#egressip-ipam-operator)
+  - [Passing EgressIPs as input](#passing-egressips-as-input)
+  - [Assumptions](#assumptions)
+  - [Considerations on High-Availability](#considerations-on-high-availability)
+  - [Support for AWS](#support-for-aws)
+  - [Support for Azure](#support-for-azure)
+  - [Support for vSphere](#support-for-vsphere)
+  - [Support for oVirt / Red Hat Virtualization](#support-for-ovirt--red-hat-virtualization)
+  - [Deploying the Operator](#deploying-the-operator)
+    - [Multiarch Support](#multiarch-support)
+    - [Deploying from OperatorHub](#deploying-from-operatorhub)
+      - [Deploying from OperatorHub UI](#deploying-from-operatorhub-ui)
+      - [Deploying from OperatorHub using CLI](#deploying-from-operatorhub-using-cli)
+    - [Deploying with Helm](#deploying-with-helm)
+  - [Metrics](#metrics)
+    - [Testing metrics](#testing-metrics)
+  - [Development](#development)
+  - [Running the operator locally](#running-the-operator-locally)
+    - [Test helm chart locally](#test-helm-chart-locally)
+  - [Building/Pushing the operator image](#buildingpushing-the-operator-image)
+  - [Deploy to OLM via bundle](#deploy-to-olm-via-bundle)
+  - [Testing](#testing)
+    - [Baremetal test](#baremetal-test)
+    - [AWS test](#aws-test)
+    - [Azure test](#azure-test)
+  - [Releasing](#releasing)
+    - [Cleaning up](#cleaning-up)
+
 Namespaces can opt in to receiving one or more egressIPs with the following annotation `egressip-ipam-operator.redhat-cop.io/egressipam:<egressIPAM>`, where `egressIPAM` is the CRD that controls how egressIPs are assigned.
 IPs assigned to the namespace can be looked up in the following annotation: `egressip-ipam-operator.redhat-cop.io/egressips`.
 
@@ -202,7 +232,7 @@ It is recommended to deploy this operator via [`OperatorHub`](https://operatorhu
 | amd64  | ✅ |
 | arm64  | ✅  |
 | ppc64le  | ✅  |
-| s390x  | ❌  |
+| s390x  | ✅  |
 
 ### Deploying from OperatorHub
 
@@ -262,6 +292,13 @@ Prometheus compatible metrics are exposed by the Operator and can be integrated 
 oc label namespace <namespace> openshift.io/cluster-monitoring="true"
 ```
 
+This operator exports two metrics (besides the standard metrics exported by any operator built with operator-sdk):
+
+- egressip-ip-capacity: Number of IPs that a node can carry (including the primary IP)
+- egressip-ip-allocated: Number IPs allocated to a node (including the primary IP)
+
+This operator also creates an alert that triggers when the used capacity passes 80% (severity warning) and 95% (severity critical).
+
 ### Testing metrics
 
 ```sh
@@ -276,16 +313,6 @@ exit
 ## Development
 
 ## Running the operator locally
-
-```shell
-make install
-oc new-project egressip-ipam-operator-local
-kustomize build ./config/local-development | oc apply -f - -n egressip-ipam-operator-local
-export token=$(oc serviceaccounts get-token 'egressip-ipam-operator-controller-manager' -n egressip-ipam-operator-local)
-export NAMESPACE=egressip-ipam-operator-local
-oc login --token ${token}
-make run ENABLE_WEBHOOKS=false
-```
 
 ```shell
 export repo=raffaelespazzoli

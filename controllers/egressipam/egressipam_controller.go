@@ -74,7 +74,7 @@ var (
 		prometheus.GaugeOpts{
 			Subsystem: "egressip",
 			Name:      "ip_capacity",
-			Help:      "Number of IPs that a node can carry (including the prinary IP)",
+			Help:      "Number of IPs that a node can carry (including the primary IP)",
 		},
 		[]string{"egressipam", "node"},
 	)
@@ -82,7 +82,7 @@ var (
 		prometheus.GaugeOpts{
 			Subsystem: "egressip",
 			Name:      "ip_allocated",
-			Help:      "Number IPs allocated to a node (including the prinary IP)",
+			Help:      "Number IPs allocated to a node (including the primary IP)",
 		},
 		[]string{"egressipam", "node"},
 	)
