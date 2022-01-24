@@ -8,8 +8,6 @@ namespace: egressip-ipam-operator
 bases:
 - ../../default
 - ./service-account.yaml
-- ./prometheus-role.yaml
-- ./prometheus-rolebinding.yaml
 
 
 patchesJson6902:
