@@ -28,3 +28,4 @@ bundle/
 bundle.Dockerfile
 charts/
 config/crd/bases/_.yaml
+config/local-development/tilt/replace-image.yaml

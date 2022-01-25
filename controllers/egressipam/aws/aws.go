@@ -1,6 +1,7 @@
 package aws
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net"
@@ -25,18 +26,20 @@ import (
 )
 
 type AWSInfra struct {
-	//direct ocp client (not chached)
-	dc client.Client
-	//aws client
+	//direct ocp client (not cached client)
+	dc                client.Client
 	c                 *ec2.EC2
 	log               logr.Logger
 	selectedInstances map[string]*ec2.Instance
+	//region in which this cluster is running
+	region string
 }
 
 func NewAWSInfra(directClient client.Client, rc *reconcilecontext.ReconcileContext) (reconcilecontext.Infra, error) {
 	aWSInfra := &AWSInfra{
-		log: ctrl.Log.WithName("AWSInfra"),
-		dc:  directClient,
+		log:    ctrl.Log.WithName("AWSInfra"),
+		dc:     directClient,
+		region: rc.Infrastructure.Status.PlatformStatus.AWS.Region,
 	}
 	c, err := aWSInfra.getAWSClient(rc.Infrastructure, rc.CloudCredentialsSecret)
 	if err != nil {
@@ -116,14 +119,6 @@ func (i *AWSInfra) getAWSInstances(nodes map[string]corev1.Node) (map[string]*ec
 	return instances, nil
 }
 
-func getAWSIstancesMapKeys(instances map[string]*ec2.Instance) []string {
-	instanceIDs := []string{}
-	for id := range instances {
-		instanceIDs = append(instanceIDs, id)
-	}
-	return instanceIDs
-}
-
 func getAWSIDFromProviderID(providerID string) string {
 	strs := strings.Split(providerID, "/")
 	return strs[len(strs)-1]
@@ -169,12 +164,11 @@ func (i *AWSInfra) removeAWSUnusedIPs(rc *reconcilecontext.ReconcileContext) err
 				}
 			}
 			results <- nil
-			return
 		}()
 	}
 	result := &multierror.Error{}
 	for range rc.FinallyAssignedIPsByNode {
-		multierror.Append(result, <-results)
+		result = multierror.Append(result, <-results)
 	}
 
 	return result.ErrorOrNil()
@@ -216,12 +210,11 @@ func (i *AWSInfra) reconcileAWSAssignedIPs(rc *reconcilecontext.ReconcileContext
 				}
 			}
 			results <- nil
-			return
 		}()
 	}
 	result := &multierror.Error{}
 	for range rc.FinallyAssignedIPsByNode {
-		multierror.Append(result, <-results)
+		result = multierror.Append(result, <-results)
 	}
 	return result.ErrorOrNil()
 }
@@ -240,6 +233,7 @@ func GetAWSCredentialsRequestProviderSpec() *cloudcredentialv1.AWSProviderSpec {
 					"ec2:AssignPrivateIpAddresses",
 					"ec2:DescribeSubnets",
 					"ec2:DescribeNetworkInterfaces",
+					"ec2:DescribeInstanceTypes",
 				},
 				Effect:   "Allow",
 				Resource: "*",
@@ -276,12 +270,11 @@ func (i *AWSInfra) removeAllAWSAssignedIPs(rc *reconcilecontext.ReconcileContext
 				}
 			}
 			results <- nil
-			return
 		}()
 	}
 	result := &multierror.Error{}
 	for range rc.SelectedNodes {
-		multierror.Append(result, <-results)
+		result = multierror.Append(result, <-results)
 	}
 	return result.ErrorOrNil()
 }
@@ -441,4 +434,69 @@ func (i *AWSInfra) getAWSCredentials(cloudCredentialsSecret *corev1.Secret) (id 
 	}
 
 	return string(awsAccessKeyID), string(awsSecretAccessKey), nil
+}
+
+func (i *AWSInfra) GetIPCapacity(node *corev1.Node) (uint32, error) {
+	itc, err := i.getInstanceTypeCache(context.TODO())
+	if err != nil {
+		i.log.Error(err, "unable to get instance type cache")
+		return 0, err
+	}
+	instanceType, ok := node.Labels["beta.kubernetes.io/instance-type"]
+	if !ok {
+		err := errors.New("unable to determinte instance type")
+		i.log.Error(err, "unable to get capacity for", "node", node)
+		return 0, err
+	}
+	capacity, err := itc.getCapacity(instanceType)
+	if err != nil {
+		i.log.Error(err, "unable to get capacity for", "node", node)
+		return 0, err
+	}
+	return capacity, nil
+}
+
+type instanceTypeCache struct {
+	instanceTypeMap map[string]ec2.InstanceTypeInfo
+}
+
+var theInstanceTypeCache *instanceTypeCache
+
+func (i *AWSInfra) getInstanceTypeCache(ctx context.Context) (*instanceTypeCache, error) {
+	if theInstanceTypeCache == nil {
+		theInstanceTypeCache = &instanceTypeCache{}
+	}
+	if len(theInstanceTypeCache.instanceTypeMap) == 0 {
+		err := i.initializeIntanceTypeCache(ctx, theInstanceTypeCache)
+		if err != nil {
+			i.log.Error(err, "unable to initialize instance type cache")
+			return nil, err
+		}
+	}
+	return theInstanceTypeCache, nil
+}
+
+func (i *AWSInfra) initializeIntanceTypeCache(ctx context.Context, cache *instanceTypeCache) error {
+	instanceTypeMap := map[string]ec2.InstanceTypeInfo{}
+	err := i.c.DescribeInstanceTypesPagesWithContext(ctx, &ec2.DescribeInstanceTypesInput{}, func(dito *ec2.DescribeInstanceTypesOutput, b bool) bool {
+		for i := range dito.InstanceTypes {
+			instanceTypeMap[*dito.InstanceTypes[i].InstanceType] = *dito.InstanceTypes[i]
+		}
+		return true
+	})
+	if err != nil {
+		i.log.Error(err, "unable to list instance types info")
+		return err
+	}
+	cache.instanceTypeMap = instanceTypeMap
+	return nil
+}
+
+func (itc *instanceTypeCache) getCapacity(instanceType string) (uint32, error) {
+	iti, ok := itc.instanceTypeMap[instanceType]
+	if !ok {
+		err := errors.New("unable to find instance type in instance type cache")
+		return 0, err
+	}
+	return uint32(*iti.NetworkInfo.Ipv4AddressesPerInterface), nil
 }

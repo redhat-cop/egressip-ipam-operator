@@ -42,6 +42,9 @@ type ReconcileContext struct {
 	FinallyAssignedIPsByNode  map[string][]string `json:"finallyAssignedIPsByNode,omitempty"`
 }
 
+type NodeCapacity interface {
+}
+
 //Infra abstracts away infrastructure related concerns
 type Infra interface {
 	//GetUsedIPsByCIDR returns a map of reserved IPs by CIDR, this IPs cannot be used for assigning to namespaces
@@ -52,4 +55,7 @@ type Infra interface {
 
 	// RemoveAllAssignedIPs uncoditionally remoevs all the assigned IPs to VMs, used in clean-up login
 	RemoveAllAssignedIPs(rc *ReconcileContext) error
+
+	// GetCapacity return the ip capacity of the node (this includes the primary IP)
+	GetIPCapacity(node *corev1.Node) (uint32, error)
 }
