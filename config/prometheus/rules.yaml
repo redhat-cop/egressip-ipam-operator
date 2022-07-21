@@ -9,9 +9,9 @@ spec:
         - alert: HighEgressIPUtilization
           annotations:
             message: >-
-              Node {{`{{`}} $labels.node {{`}}`}} has been utilizing more than 80% of its egressip capacity for the last 10 minutes
+              Node {{ $labels.node }} has been utilizing more than 80% of its egressip capacity for the last 10 minutes
             summary: >-
-              Node {{`{{`}} $labels.node {{`}}`}} is utilizing more than 80% of its egressip capacity
+              Node {{ $labels.node }} is utilizing more than 80% of its egressip capacity
           expr: |
             egressip_ip_allocated/egressip_ip_capacity > 0.8
           for: 10m
@@ -20,9 +20,9 @@ spec:
         - alert: ExtremelyHighEgressIPUtilization
           annotations:
             message: >-
-              Node {{`{{`}} $labels.node {{`}}`}} has been utilizing more than 95% of its egressip capacity for the last 5 minutes
+              Node {{ $labels.node }} has been utilizing more than 95% of its egressip capacity for the last 5 minutes
             summary: >-
-              Node {{`{{`}} $labels.node {{`}}`}} is utilizing more than 95% of its egressip capacity
+              Node {{ $labels.node }} is utilizing more than 95% of its egressip capacity
           expr: >
             egressip_ip_allocated/egressip_ip_capacity > 0.95
           for: 5m

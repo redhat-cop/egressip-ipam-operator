@@ -232,6 +232,7 @@ helmchart: kustomize helm
 	version=${VERSION} image_repo=$${IMG%:*} envsubst < ./config/helmchart/values.yaml.tpl  > ./charts/${OPERATOR_NAME}/values.yaml
 	sed -i '1s/^/{{ if .Values.enableMonitoring }}/' ./charts/${OPERATOR_NAME}/templates/monitoring.coreos.com_v1_servicemonitor_${OPERATOR_NAME}-controller-manager-metrics-monitor.yaml
 	echo {{ end }} >> ./charts/${OPERATOR_NAME}/templates/monitoring.coreos.com_v1_servicemonitor_${OPERATOR_NAME}-controller-manager-metrics-monitor.yaml
+	sed -i 's/{{ $$labels.node }}/{{`{{`}} $$labels.node {{`}}`}}/g' ./charts/${OPERATOR_NAME}/templates/monitoring.coreos.com_v1_prometheusrule_${OPERATOR_NAME}-egressip-utilization.yaml
 	$(HELM) lint ./charts/${OPERATOR_NAME}
 
 helmchart-repo: helmchart
