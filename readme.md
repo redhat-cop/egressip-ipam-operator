@@ -347,7 +347,7 @@ Delete...
 
 ```shell
 helm delete egressip-ipam-operator-local -n egressip-ipam-operator-local
-kubectl delete -f charts/egressip-ipam-operator/crds/crds.yaml
+kubectl delete -f charts/egressip-ipam-operator/crds/
 ```
 
 ## Building/Pushing the operator image

@@ -4,7 +4,7 @@ go 1.16
 
 require (
 	github.com/Azure/azure-sdk-for-go v49.2.0+incompatible
-	github.com/Azure/go-autorest/autorest v0.11.11
+	github.com/Azure/go-autorest/autorest v0.11.12
 	github.com/Azure/go-autorest/autorest/adal v0.9.5
 	github.com/Azure/go-autorest/autorest/to v0.4.0 // indirect
 	github.com/Azure/go-autorest/autorest/validation v0.3.0 // indirect
@@ -21,13 +21,12 @@ require (
 	github.com/openshift/cloud-credential-operator v0.0.0-20200926024851-4ef74fd4ae81
 	//d19e8d007f7cc19dc0daa7e61fe09ba8ecae3777 pin to OCP 4.5
 	github.com/openshift/machine-api-operator v0.2.1-0.20200529045911-d19e8d007f7c
-	github.com/prometheus/client_golang v1.8.0 // indirect
+	github.com/prometheus/client_golang v1.11.0
 	github.com/redhat-cop/operator-utils v1.1.4
 	github.com/scylladb/go-set v1.0.2
-	golang.org/x/crypto v0.0.0-20201117144127-c1f2f97bffc9 // indirect
 	golang.org/x/oauth2 v0.0.0-20200902213428-5d25da1a8d43 // indirect
-	k8s.io/api v0.20.2
-	k8s.io/apimachinery v0.20.2
-	k8s.io/client-go v0.20.2
-	sigs.k8s.io/controller-runtime v0.8.3
+	k8s.io/api v0.21.2
+	k8s.io/apimachinery v0.21.2
+	k8s.io/client-go v0.21.2
+	sigs.k8s.io/controller-runtime v0.9.2
 )
