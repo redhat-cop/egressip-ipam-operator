@@ -224,6 +224,7 @@ helmchart: kustomize helm
 	mkdir -p ./charts/${OPERATOR_NAME}/crds
 	repo=${OPERATOR_NAME} envsubst < ./config/local-development/tilt/env-replace-image.yaml > ./config/local-development/tilt/replace-image.yaml
 	$(KUSTOMIZE) build ./config/helmchart -o ./charts/${OPERATOR_NAME}/templates
+	sed -i 's/{{/<</;s/}}/>>/;s/<</{{ "{{" }}/;s/>>/{{ "}}" }}/' ./charts/${OPERATOR_NAME}/templates/monitoring.coreos.com_v1_prometheusrule_${OPERATOR_NAME}-egressip-utilization.yaml
 	sed -i 's/release-namespace/{{.Release.Namespace}}/' ./charts/${OPERATOR_NAME}/templates/*.yaml
 	rm ./charts/${OPERATOR_NAME}/templates/v1_namespace_release-namespace.yaml ./charts/${OPERATOR_NAME}/templates/apps_v1_deployment_${OPERATOR_NAME}-controller-manager.yaml
 	mv ./charts/${OPERATOR_NAME}/templates/apiextensions.k8s.io_v1_customresourcedefinition* ./charts/${OPERATOR_NAME}/crds
@@ -232,7 +233,6 @@ helmchart: kustomize helm
 	version=${VERSION} image_repo=$${IMG%:*} envsubst < ./config/helmchart/values.yaml.tpl  > ./charts/${OPERATOR_NAME}/values.yaml
 	sed -i '1s/^/{{ if .Values.enableMonitoring }}/' ./charts/${OPERATOR_NAME}/templates/monitoring.coreos.com_v1_servicemonitor_${OPERATOR_NAME}-controller-manager-metrics-monitor.yaml
 	echo {{ end }} >> ./charts/${OPERATOR_NAME}/templates/monitoring.coreos.com_v1_servicemonitor_${OPERATOR_NAME}-controller-manager-metrics-monitor.yaml
-	sed -i 's/{{ $$labels.node }}/{{`{{`}} $$labels.node {{`}}`}}/g' ./charts/${OPERATOR_NAME}/templates/monitoring.coreos.com_v1_prometheusrule_${OPERATOR_NAME}-egressip-utilization.yaml
 	$(HELM) lint ./charts/${OPERATOR_NAME}
 
 helmchart-repo: helmchart
