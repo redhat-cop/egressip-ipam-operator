@@ -19,19 +19,19 @@ spec:
         {{- include "egressip-ipam-operator.selectorLabels" . | nindent 8 }}
         operator: egressip-ipam-operator
     spec:
-      serviceAccountName: egressip-ipam-operator-controller-manager
+      serviceAccountName: controller-manager
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
-      {{- end }} 
+      {{- end }}
       containers:
       - args:
-        - --secure-listen-address=0.0.0.0:8443
-        - --upstream=http://127.0.0.1:8080/
-        - --logtostderr=true
-        - --tls-cert-file=/etc/certs/tls/tls.crt
-        - --tls-private-key-file=/etc/certs/tls/tls.key
-        - --v=10
+          - --secure-listen-address=0.0.0.0:8443
+          - --upstream=http://127.0.0.1:8080/
+          - --logtostderr=true
+          - --tls-cert-file=/etc/certs/tls/tls.crt
+          - --tls-private-key-file=/etc/certs/tls/tls.key
+          - --v=10
         image: "{{ .Values.kube_rbac_proxy.image.repository }}:{{ .Values.kube_rbac_proxy.image.tag }}"
         name: kube-rbac-proxy
         ports:
@@ -43,8 +43,8 @@ spec:
         imagePullPolicy: {{ .Values.kube_rbac_proxy.image.pullPolicy }}
         {{- with .Values.env }}
         env:
-         {{- toYaml . | nindent 8 }}
-        {{- end }}        
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
         resources:
           {{- toYaml .Values.kube_rbac_proxy.resources | nindent 10 }}
       - command:

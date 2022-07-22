@@ -12,6 +12,12 @@ bases:
 
 patchesJson6902:
 - target:
+    group: ""
+    version: v1
+    kind: Service
+    name: egressip-ipam-operator-webhook-service
+  path: ./secret-injection.yaml
+- target:
     group: apps
     version: v1
     kind: Deployment
