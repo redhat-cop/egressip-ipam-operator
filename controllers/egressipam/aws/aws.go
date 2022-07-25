@@ -289,43 +289,50 @@ func (i *AWSInfra) getAWSUsedIPsByCIDR(rc *reconcilecontext.ReconcileContext) (m
 		return map[string][]net.IP{}, err
 	}
 
+	subnetIDs := []*string{}
 	subnetTagNames := []*string{}
+
 	for _, machine := range machinesetList.Items {
 		aWSMachineProviderConfig := AWSMachineProviderConfig{}
 		err := json.Unmarshal(machine.Spec.Template.Spec.ProviderSpec.Value.Raw, &aWSMachineProviderConfig)
 		if err != nil {
-			i.log.Error(err, "unable to unmarshall into wsproviderv1alpha2.AWSMachineSpec", "raw json", string(machine.Spec.Template.Spec.ProviderSpec.Value.Raw))
+			i.log.Error(err, "unable to unmarshall into awsproviderv1alpha2.AWSMachineSpec", "raw json", string(machine.Spec.Template.Spec.ProviderSpec.Value.Raw))
 			return map[string][]net.IP{}, err
 		}
-		for _, filter := range aWSMachineProviderConfig.Subnet.Filters {
-			if filter.Name == "tag:Name" {
-				for _, value := range filter.Values {
-					subnetTagNames = append(subnetTagNames, aws.String(value))
-				}
+		// if a subnet is selected by ID, we use the ID directly
+		if aWSMachineProviderConfig.Subnet.ID != nil {
+			subnetIDs = append(subnetIDs, aWSMachineProviderConfig.Subnet.ID)
+			// if subnets are selected by tag, we save the tag to find the corresponding IDs later on
+		} else {
+			for _, filter := range aWSMachineProviderConfig.Subnet.Filters {
 
+				if filter.Name == "tag:Name" {
+					for _, value := range filter.Values {
+						subnetTagNames = append(subnetTagNames, aws.String(value))
+					}
+				}
 			}
 		}
 	}
 
-	describeSubnetInput := &ec2.DescribeSubnetsInput{
-		Filters: []*ec2.Filter{
+	if len(subnetTagNames) > 0 {
+		describeSubnetInput := &ec2.DescribeSubnetsInput{}
+		describeSubnetInput.Filters = []*ec2.Filter{
 			{
 				Name:   aws.String("tag:Name"),
 				Values: subnetTagNames,
 			},
-		},
-	}
+		}
 
-	describeSubnetResult, err := i.c.DescribeSubnets(describeSubnetInput)
-	if err != nil {
-		i.log.Error(err, "unable to retrieve subnets ", "with request", describeSubnetInput)
-		return map[string][]net.IP{}, err
-	}
-	//i.log.V(1).Info("", "describeSubnetResult", describeSubnetResult)
+		describeSubnetResult, err := i.c.DescribeSubnets(describeSubnetInput)
+		if err != nil {
+			i.log.Error(err, "unable to retrieve subnets ", "with request", describeSubnetInput)
+			return map[string][]net.IP{}, err
+		}
 
-	subnetIDs := []*string{}
-	for _, subnet := range describeSubnetResult.Subnets {
-		subnetIDs = append(subnetIDs, subnet.SubnetId)
+		for _, subnet := range describeSubnetResult.Subnets {
+			subnetIDs = append(subnetIDs, subnet.SubnetId)
+		}
 	}
 
 	describeNetworkInterfacesInput := &ec2.DescribeNetworkInterfacesInput{
