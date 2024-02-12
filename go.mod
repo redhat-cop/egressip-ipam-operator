@@ -3,7 +3,7 @@ module github.com/redhat-cop/egressip-ipam-operator
 go 1.19
 
 require (
-	github.com/Azure/azure-sdk-for-go v49.2.0+incompatible
+	github.com/Azure/azure-sdk-for-go v49.2.1+incompatible
 	github.com/Azure/go-autorest/autorest v0.11.12
 	github.com/Azure/go-autorest/autorest/adal v0.9.5
 	github.com/aws/aws-sdk-go v1.36.15
