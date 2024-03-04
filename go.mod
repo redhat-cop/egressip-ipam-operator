@@ -10,7 +10,7 @@ require (
 	github.com/go-logr/logr v0.4.0
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/jpillora/ipmath v0.0.0-20180121110145-ebede80a2ab9
-	github.com/onsi/ginkgo v1.16.4
+	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.13.0
 	//0a191b5b9bb0ff4bf39e44be0fb4ffd7381766d3 pin to OCP 4.5
 	github.com/openshift/api v0.0.0-20200917102736-0a191b5b9bb0
