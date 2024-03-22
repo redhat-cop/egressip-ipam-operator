@@ -186,7 +186,7 @@ func (i *AzureInfra) getAzureInstances(context context.Context, resourceGroupNam
 	return instanceList, nil
 }
 
-//GetUsedIPsByCIDR returns a map of reserved IPs by CIDR, this IPs cannot be used for assigning to namespaces
+// GetUsedIPsByCIDR returns a map of reserved IPs by CIDR, this IPs cannot be used for assigning to namespaces
 func (i *AzureInfra) GetUsedIPsByCIDR(rc *reconcilecontext.ReconcileContext) (map[string][]net.IP, error) {
 	IPsByCIDR, err := i.getAzureUsedIPsByCIDR(rc)
 	if err != nil {
@@ -309,8 +309,8 @@ func (i *AzureInfra) getVirtualNetwork(rc *reconcilecontext.ReconcileContext) (s
 
 }
 
-//ReconcileInstanceSecondaryIPs will make sure that Assigned Egress IPs to instances are correclty reconciled
-//this includes adding and possibly removing secondary IPs to selected instances.
+// ReconcileInstanceSecondaryIPs will make sure that Assigned Egress IPs to instances are correclty reconciled
+// this includes adding and possibly removing secondary IPs to selected instances.
 func (i *AzureInfra) ReconcileInstanceSecondaryIPs(rc *reconcilecontext.ReconcileContext) error {
 	err := i.reconcileAzureAssignedIPs(rc)
 	if err != nil {

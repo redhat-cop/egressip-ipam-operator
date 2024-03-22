@@ -291,7 +291,7 @@ func (r *EgressIPAMReconciler) GetCredentialSecret(context context.Context) (*co
 	return credentialSecret, nil
 }
 
-//IsValid check if the instance is valid. In particular it checks that the CIDRs and the reservedIPs can be parsed correctly
+// IsValid check if the instance is valid. In particular it checks that the CIDRs and the reservedIPs can be parsed correctly
 func (r *EgressIPAMReconciler) IsValid(obj client.Object) (bool, error) {
 	ergessIPAM, ok := obj.(*redhatcopv1alpha1.EgressIPAM)
 	if !ok {
@@ -320,7 +320,7 @@ func (r *EgressIPAMReconciler) IsValid(obj client.Object) (bool, error) {
 	return true, nil
 }
 
-//IsInitialized initislizes the instance, currently is simply adds a finalizer.
+// IsInitialized initislizes the instance, currently is simply adds a finalizer.
 func (r *EgressIPAMReconciler) IsInitialized(obj client.Object) bool {
 	isInitialized := true
 	ergessIPAM, ok := obj.(*redhatcopv1alpha1.EgressIPAM)

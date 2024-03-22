@@ -10,7 +10,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-//ReconcileContext is a data structure represts all the known information about the current reconcile cycle.
+// ReconcileContext is a data structure represts all the known information about the current reconcile cycle.
 type ReconcileContext struct {
 	//immutable fields within a reconciliation cycle
 	Context                     context.Context                  `json:"context,omitempty"`
@@ -45,7 +45,7 @@ type ReconcileContext struct {
 type NodeCapacity interface {
 }
 
-//Infra abstracts away infrastructure related concerns
+// Infra abstracts away infrastructure related concerns
 type Infra interface {
 	//GetUsedIPsByCIDR returns a map of reserved IPs by CIDR, this IPs cannot be used for assigning to namespaces
 	GetUsedIPsByCIDR(rc *ReconcileContext) (map[string][]net.IP, error)
