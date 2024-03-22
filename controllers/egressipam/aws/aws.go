@@ -56,7 +56,7 @@ func NewAWSInfra(directClient client.Client, rc *reconcilecontext.ReconcileConte
 	return aWSInfra, nil
 }
 
-//GetUsedIPsByCIDR returns a map of reserved IPs by CIDR, this IPs cannot be used for assigning to namespaces
+// GetUsedIPsByCIDR returns a map of reserved IPs by CIDR, this IPs cannot be used for assigning to namespaces
 func (i *AWSInfra) GetUsedIPsByCIDR(rc *reconcilecontext.ReconcileContext) (map[string][]net.IP, error) {
 	IPsByCIDR, err := i.getAWSUsedIPsByCIDR(rc)
 	if err != nil {
@@ -75,8 +75,8 @@ func (i *AWSInfra) GetUsedIPsByCIDR(rc *reconcilecontext.ReconcileContext) (map[
 	return IPsByCIDR, nil
 }
 
-//ReconcileInstanceSecondaryIPs will make sure that Assigned Egress IPs to instances are correclty reconciled
-//this includes adding and possibly removing secondary IPs to selected instances.
+// ReconcileInstanceSecondaryIPs will make sure that Assigned Egress IPs to instances are correclty reconciled
+// this includes adding and possibly removing secondary IPs to selected instances.
 func (i *AWSInfra) ReconcileInstanceSecondaryIPs(rc *reconcilecontext.ReconcileContext) error {
 	err := i.removeAWSUnusedIPs(rc)
 	if err != nil {
@@ -279,8 +279,8 @@ func (i *AWSInfra) removeAllAWSAssignedIPs(rc *reconcilecontext.ReconcileContext
 	return result.ErrorOrNil()
 }
 
-//getTakenIPsByCIDR this function will lookup all the subnets in which nodes are deployed and then lookup all the ips allocated by those subnest
-//currently it is requred that cidr declared in the egress map, correspon to cidr declared in subnets.
+// getTakenIPsByCIDR this function will lookup all the subnets in which nodes are deployed and then lookup all the ips allocated by those subnest
+// currently it is requred that cidr declared in the egress map, correspon to cidr declared in subnets.
 func (i *AWSInfra) getAWSUsedIPsByCIDR(rc *reconcilecontext.ReconcileContext) (map[string][]net.IP, error) {
 	machinesetList := &machinev1beta1.MachineSetList{}
 	err := i.dc.List(rc.Context, machinesetList, &client.ListOptions{})

@@ -20,12 +20,12 @@ func NewBareMetalInfra() *BareMetalInfra {
 	}
 }
 
-//GetSelectedInstances returns a map of nodename and corresponding instance info
+// GetSelectedInstances returns a map of nodename and corresponding instance info
 func (bm *BareMetalInfra) GetSelectedInstances(rc *reconcilecontext.ReconcileContext) (map[string]interface{}, error) {
 	return map[string]interface{}{}, nil
 }
 
-//GetUsedIPsByCIDR returns a map of reserved IPs by CIDR, this IPs cannot be used for assigning to namespaces
+// GetUsedIPsByCIDR returns a map of reserved IPs by CIDR, this IPs cannot be used for assigning to namespaces
 func (bm *BareMetalInfra) GetUsedIPsByCIDR(rc *reconcilecontext.ReconcileContext) (map[string][]net.IP, error) {
 	usedIPsByCIDR := map[string][]net.IP{}
 
@@ -35,8 +35,8 @@ func (bm *BareMetalInfra) GetUsedIPsByCIDR(rc *reconcilecontext.ReconcileContext
 	return usedIPsByCIDR, nil
 }
 
-//ReconcileInstanceSecondaryIPs will make sure that Assigned Egress IPs to instances are correclty reconciled
-//this includes adding and possibly removing secondary IPs to selected instances.
+// ReconcileInstanceSecondaryIPs will make sure that Assigned Egress IPs to instances are correclty reconciled
+// this includes adding and possibly removing secondary IPs to selected instances.
 func (bm *BareMetalInfra) ReconcileInstanceSecondaryIPs(rc *reconcilecontext.ReconcileContext) error {
 	return nil
 }
