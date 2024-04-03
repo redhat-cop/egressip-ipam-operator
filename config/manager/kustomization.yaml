@@ -13,4 +13,4 @@ kind: Kustomization
 images:
 - name: controller
   newName: quay.io/davgordo/egressip-ipam-operator
-  newTag: latest
+  newTag: latest@sha256:6d13e2c638232ca152bed9353845a572420dffc77ff5e25b6bb83b9ad7813f1c
