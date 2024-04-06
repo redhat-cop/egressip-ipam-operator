@@ -13,7 +13,7 @@ require (
 	github.com/onsi/ginkgo v1.16.4
 	github.com/onsi/gomega v1.13.0
 	//0a191b5b9bb0ff4bf39e44be0fb4ffd7381766d3 pin to OCP 4.5
-	github.com/openshift/api v0.0.0-20200917102736-0a191b5b9bb0
+	github.com/openshift/api abd990ce290b
 	//4ef74fd4ae81ff9eb4cdfa8805abf6775e4561d0 pin to OCP 4.5
 	github.com/openshift/cloud-credential-operator v0.0.0-20200926024851-4ef74fd4ae81
 	//d19e8d007f7cc19dc0daa7e61fe09ba8ecae3777 pin to OCP 4.5
