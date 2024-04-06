@@ -15,7 +15,7 @@ require (
 	//0a191b5b9bb0ff4bf39e44be0fb4ffd7381766d3 pin to OCP 4.5
 	github.com/openshift/api v0.0.0-20200917102736-0a191b5b9bb0
 	//4ef74fd4ae81ff9eb4cdfa8805abf6775e4561d0 pin to OCP 4.5
-	github.com/openshift/cloud-credential-operator v0.0.0-20200926024851-4ef74fd4ae81
+	github.com/openshift/cloud-credential-operator 5e8812d64187
 	//d19e8d007f7cc19dc0daa7e61fe09ba8ecae3777 pin to OCP 4.5
 	github.com/openshift/machine-api-operator v0.2.1-0.20200529045911-d19e8d007f7c
 	github.com/prometheus/client_golang v1.11.0
