@@ -9,7 +9,7 @@ KIND_VERSION ?= v0.20.0
 KUBECTL_VERSION ?= v1.27.3
 K8S_MAJOR_VERSION ?= 1.27
 KUSTOMIZE_VERSION ?= v3.8.7
-CONTROLLER_TOOLS_VERSION ?= v0.11.1
+CONTROLLER_TOOLS_VERSION ?= v0.14.0
 # Set the Operator SDK version to use. By default, what is installed on the system is used.
 # This is useful for CI or a project to utilize a specific version of the operator-sdk toolkit.
 OPERATOR_SDK_VERSION ?= v1.31.0
