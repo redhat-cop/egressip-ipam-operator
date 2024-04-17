@@ -9,12 +9,13 @@ KIND_VERSION ?= v0.20.0
 KUBECTL_VERSION ?= v1.27.3
 K8S_MAJOR_VERSION ?= 1.27
 KUSTOMIZE_VERSION ?= v3.8.7
-CONTROLLER_TOOLS_VERSION ?= v0.11.1
+CONTROLLER_TOOLS_VERSION ?= v0.14.0
 # Set the Operator SDK version to use. By default, what is installed on the system is used.
 # This is useful for CI or a project to utilize a specific version of the operator-sdk toolkit.
 OPERATOR_SDK_VERSION ?= v1.31.0
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION ?= 1.26.0
+ENVTEST_VERSION ?= latest
 
 
 # VERSION defines the project version for the bundle.
@@ -194,7 +195,7 @@ $(CONTROLLER_GEN): $(LOCALBIN)
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 envtest: $(ENVTEST) ## Download envtest-setup locally if necessary.
 $(ENVTEST): $(LOCALBIN)
-	test -s $(LOCALBIN)/setup-envtest || echo "Downloading setup-envtest to ${ENVTEST}..." && GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+	test -s $(LOCALBIN)/setup-envtest || echo "Downloading setup-envtest to ${ENVTEST}..." && GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@$(ENVTEST_VERSION)
 
 .PHONY: bundle
 bundle: manifests kustomize operator-sdk ## Generate bundle manifests and metadata, then validate generated files.
