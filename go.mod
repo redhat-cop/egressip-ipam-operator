@@ -1,6 +1,6 @@
 module github.com/redhat-cop/egressip-ipam-operator
 
-go 1.22
+go 1.22.0
 
 require (
 	github.com/Azure/azure-sdk-for-go v49.2.0+incompatible
