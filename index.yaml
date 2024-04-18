@@ -2,8 +2,25 @@ apiVersion: v1
 entries:
   egressip-ipam-operator:
   - apiVersion: v1
+    appVersion: v1.2.6
+    created: "2024-04-18T12:23:23.515390006Z"
+    description: Helm chart that deploys egressip-ipam-operator
+    digest: 30a313a635ba2d37d7bce7f62daa5a74489a98d4e39919bbb5c2c7a35c3e9979
+    keywords:
+    - volume
+    - storage
+    - csi
+    - expansion
+    - monitoring
+    name: egressip-ipam-operator
+    sources:
+    - https://github.com/redhat-cop/egressip-ipam-operator
+    urls:
+    - https://redhat-cop.github.io/egressip-ipam-operator/egressip-ipam-operator/egressip-ipam-operator-v1.2.6.tgz
+    version: v1.2.6
+  - apiVersion: v1
     appVersion: v1.2.4
-    created: "2022-07-25T15:09:03.292512198Z"
+    created: "2024-04-18T12:23:23.514959719Z"
     description: Helm chart that deploys egressip-ipam-operator
     digest: 7f927f684360a7d23ac03668288c95e002255604d06c6bc5a883de07aa0e7a7a
     keywords:
@@ -20,7 +37,7 @@ entries:
     version: v1.2.4
   - apiVersion: v1
     appVersion: v1.2.3
-    created: "2022-07-25T15:09:03.291955386Z"
+    created: "2024-04-18T12:23:23.514476733Z"
     description: Helm chart that deploys egressip-ipam-operator
     digest: 669ab94a99dabc45453d21b76909fce2eb4224a697329cbb2af38dd61bf9a804
     keywords:
@@ -37,7 +54,7 @@ entries:
     version: v1.2.3
   - apiVersion: v1
     appVersion: v1.2.2
-    created: "2022-07-25T15:09:03.291481375Z"
+    created: "2024-04-18T12:23:23.513629705Z"
     description: Helm chart that deploys egressip-ipam-operator
     digest: 20db38edf721121d7e99f82d0b0ab0a6dbce5e024431c7d097827653368a7965
     keywords:
@@ -54,7 +71,7 @@ entries:
     version: v1.2.2
   - apiVersion: v1
     appVersion: v1.2.1
-    created: "2022-07-25T15:09:03.290997665Z"
+    created: "2024-04-18T12:23:23.513080935Z"
     description: Helm chart that deploys egressip-ipam-operator
     digest: e4dba59fd968da93cbc63fa131c50a93cbcd8b70ed578de58216829d20b25f95
     keywords:
@@ -71,7 +88,7 @@ entries:
     version: v1.2.1
   - apiVersion: v1
     appVersion: v1.2.0
-    created: "2022-07-25T15:09:03.290539055Z"
+    created: "2024-04-18T12:23:23.51274746Z"
     description: Helm chart that deploys egressip-ipam-operator
     digest: d30e570f6c9cd1dca18b048ee504118a5183e62d767672bf6c419d9b8a0721d9
     keywords:
@@ -88,7 +105,7 @@ entries:
     version: v1.2.0
   - apiVersion: v1
     appVersion: v1.1.0
-    created: "2022-07-25T15:09:03.290084045Z"
+    created: "2024-04-18T12:23:23.512436216Z"
     description: Helm chart that deploys egressip-ipam-operator
     digest: 81d0a317096ea8824ed011a490c158cbaad23105e56423125560cc6c67a687b7
     keywords:
@@ -105,7 +122,7 @@ entries:
     version: v1.1.0
   - apiVersion: v1
     appVersion: v1.0.9
-    created: "2022-07-25T15:09:03.289621834Z"
+    created: "2024-04-18T12:23:23.511922812Z"
     description: Helm chart that deploys egressip-ipam-operator
     digest: 88ba936063bd02ed0019fcc8f8cb9c6d553c51f286e994be1b52e1a5363ed12f
     keywords:
@@ -122,7 +139,7 @@ entries:
     version: v1.0.9
   - apiVersion: v1
     appVersion: v1.0.8
-    created: "2022-07-25T15:09:03.289124424Z"
+    created: "2024-04-18T12:23:23.511542338Z"
     description: Helm chart that deploys egressip-ipam-operator
     digest: b3584eb7df4ba4fe2cce8e6b938f82a9cdd589ef8705aca194ff0e77033a3260
     keywords:
@@ -139,7 +156,7 @@ entries:
     version: v1.0.8
   - apiVersion: v1
     appVersion: v1.0.7
-    created: "2022-07-25T15:09:03.28852841Z"
+    created: "2024-04-18T12:23:23.511241263Z"
     description: Helm chart that deploys egressip-ipam-operator
     digest: efb06bffd9868553ceb060bbe0d3f6642c80db090cbd6fbe82972f7a04681b9d
     keywords:
@@ -156,7 +173,7 @@ entries:
     version: v1.0.7
   - apiVersion: v1
     appVersion: v1.0.6
-    created: "2022-07-25T15:09:03.287947298Z"
+    created: "2024-04-18T12:23:23.510942543Z"
     description: Helm chart that deploys egressip-ipam-operator
     digest: 358a6ebf52680120136d40ca416bb6334489c63802f5b3de0c380d8339423de8
     keywords:
@@ -173,7 +190,7 @@ entries:
     version: v1.0.6
   - apiVersion: v1
     appVersion: v1.0.5
-    created: "2022-07-25T15:09:03.286807473Z"
+    created: "2024-04-18T12:23:23.510667086Z"
     description: Helm chart that deploys egressip-ipam-operator
     digest: 0760de2601b6dfc54347301ad706b2b8878bd13c8535227df4c11848d78e205c
     keywords:
@@ -190,7 +207,7 @@ entries:
     version: v1.0.5
   - apiVersion: v1
     appVersion: v1.0.4
-    created: "2022-07-25T15:09:03.286338962Z"
+    created: "2024-04-18T12:23:23.510375569Z"
     description: Helm chart that deploys egressip-ipam-operator
     digest: 247be7b20976b76335bd92805df3adca94acc23ce06ee24dad38c6a9ceff13e3
     keywords:
@@ -207,7 +224,7 @@ entries:
     version: v1.0.4
   - apiVersion: v1
     appVersion: v1.0.3
-    created: "2022-07-25T15:09:03.285835851Z"
+    created: "2024-04-18T12:23:23.510140468Z"
     description: Helm chart that deploys egressip-ipam-operator
     digest: d631c9c1c7c3f88efda421d0cbe2bd5eb381c7da00ccf4ddc1a0bcc012d9007a
     keywords:
@@ -224,7 +241,7 @@ entries:
     version: v1.0.3
   - apiVersion: v1
     appVersion: v1.0.2
-    created: "2022-07-25T15:09:03.285425442Z"
+    created: "2024-04-18T12:23:23.509902241Z"
     description: Helm chart that deploys egressip-ipam-operator
     digest: 977f40fceab8d4ed8f6dbd561202c60480b0a80f9b89c01607b60fd358826881
     keywords:
@@ -241,7 +258,7 @@ entries:
     version: v1.0.2
   - apiVersion: v1
     appVersion: v1.0.1
-    created: "2022-07-25T15:09:03.285033034Z"
+    created: "2024-04-18T12:23:23.509647713Z"
     description: Helm chart that deploys egressip-ipam-operator
     digest: 23e1154f08b4dc03d553e7bd4f58bec88f79f4330e65e8985594d68f83764b1d
     keywords:
@@ -258,7 +275,7 @@ entries:
     version: v1.0.1
   - apiVersion: v1
     appVersion: v1.0.0
-    created: "2022-07-25T15:09:03.284606824Z"
+    created: "2024-04-18T12:23:23.509385932Z"
     description: Helm chart that deploys egressip-ipam-operator
     digest: c0ce1d12dcca1875789a6c31b7e6e45e9336230798f9d52f1b6ef58bfae66112
     keywords:
@@ -275,7 +292,7 @@ entries:
     version: v1.0.0
   - apiVersion: v1
     appVersion: v0.1.2
-    created: "2022-07-25T15:09:03.283757805Z"
+    created: "2024-04-18T12:23:23.509113822Z"
     description: Helm chart that deploys egressip-ipam-operator
     digest: d686d56a0a52cb445b0ce21c93f0dd91de3886ff2d8132aa0c70d09dc078d5f1
     keywords:
@@ -290,7 +307,7 @@ entries:
     version: v0.1.2
   - apiVersion: v1
     appVersion: v0.1.1
-    created: "2022-07-25T15:09:03.282931587Z"
+    created: "2024-04-18T12:23:23.508897977Z"
     description: Helm chart that deploys egressip-ipam-operator
     digest: f99fd100fd5aa65d2ca650d4466634f05866ab9077b87b9da20c1bbe7dcaa2e6
     keywords:
@@ -305,7 +322,7 @@ entries:
     version: v0.1.1
   - apiVersion: v1
     appVersion: v0.1.0
-    created: "2022-07-25T15:09:03.282661281Z"
+    created: "2024-04-18T12:23:23.508664428Z"
     description: Helm chart that deploys egressip-ipam-operator
     digest: 21dcd57e1c3062b80249bd933d118946e82d5d24cf3810dc4e3d39530af49085
     keywords:
@@ -318,4 +335,4 @@ entries:
     urls:
     - https://redhat-cop.github.io/egressip-ipam-operator/egressip-ipam-operator/egressip-ipam-operator-v0.1.0.tgz
     version: v0.1.0
-generated: "2022-07-25T15:09:03.282182171Z"
+generated: "2024-04-18T12:23:23.507473404Z"
